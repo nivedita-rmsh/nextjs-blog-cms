@@ -77,13 +77,13 @@ function getHeadingLabel(editor: Editor): string {
 }
 
 // The shared dialog supplies keyboard containment, Escape dismissal and focus return.
-function ColorPanel({ editor, triggerRef, initialSection, onClose, id }: {
+function ColorPanel({ editor, triggerRef, initialSection, onClose, id }: Readonly<{
   editor: Editor
   triggerRef: React.RefObject<HTMLButtonElement | null>
   initialSection: 'text' | 'highlight'
   onClose: () => void
   id: string
-}) {
+}>) {
   const textRef = useRef<HTMLButtonElement>(null)
   const highlightRef = useRef<HTMLButtonElement>(null)
   return <DialogContent id={id} finalFocus={triggerRef} initialFocus={initialSection === 'text' ? textRef : highlightRef} className="max-h-[90dvh] overflow-y-auto">
@@ -111,10 +111,8 @@ function ColorPanel({ editor, triggerRef, initialSection, onClose, id }: {
             if (section === 'text') {
               if (active === hex) editor.chain().unsetColor().run()
               else editor.chain().setColor(hex).run()
-            } else {
-              if (active === hex) editor.chain().unsetHighlight().run()
-              else editor.chain().setHighlight({ color: hex }).run()
-            }
+            } else if (active === hex) editor.chain().unsetHighlight().run()
+            else editor.chain().setHighlight({ color: hex }).run()
             onClose()
           }}
         />)}
@@ -184,7 +182,7 @@ function LineHeightMenu({ editor, activeLineHeight }: LineHeightMenuProps) {
         <Label htmlFor={inputId}>Line spacing</Label>
         <Input ref={inputRef} id={inputId} type="number" min={0.5} max={10} step="any"
           value={customValue} aria-invalid={!!customError}
-          aria-describedby={`${inputId}-help${customError ? ` ${inputId}-error` : ''}`}
+          aria-describedby={[`${inputId}-help`, customError ? `${inputId}-error` : undefined].filter(Boolean).join(' ')}
           onChange={event => setCustomValue(event.target.value)}
           onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); applyCustom() } }} />
         {customError && <p id={`${inputId}-error`} role="alert" className="text-sm text-destructive">{customError}</p>}
@@ -224,9 +222,10 @@ export function Toolbar({ editor, onImage }: ToolbarProps) {
 
   const activeColor = editor.getAttributes('textStyle').color ?? '#000000'
   const activeHighlight = editor.getAttributes('highlight').color ?? '#fef9c3'
+  const highlightLabel = editor.isActive('highlight') ? activeHighlight : 'none'
 
   return (
-    <div role="group" aria-label="Content formatting" className="flex flex-wrap items-center gap-1 p-2 border-b bg-muted/30">
+    <fieldset aria-label="Content formatting" className="min-w-0 flex flex-wrap items-center gap-1 p-2 border-b bg-muted/30">
 
       {/* Group 1: Heading dropdown */}
       <DropdownMenu>
@@ -273,7 +272,7 @@ export function Toolbar({ editor, onImage }: ToolbarProps) {
             variant="ghost"
             size="sm"
             title={section === 'text' ? 'Text color' : 'Highlight'}
-            aria-label={section === 'text' ? `Text color: ${activeColor}` : `Highlight: ${editor.isActive('highlight') ? activeHighlight : 'none'}`}
+            aria-label={section === 'text' ? `Text color: ${activeColor}` : `Highlight: ${highlightLabel}`}
             aria-haspopup="dialog"
             aria-expanded={colorPanelOpen && initialSection === section}
             aria-controls={colorPanelOpen ? colorPanelId : undefined}
@@ -338,6 +337,6 @@ export function Toolbar({ editor, onImage }: ToolbarProps) {
       {/* Group 7: Line height dropdown */}
       <LineHeightMenu editor={editor} activeLineHeight={activeLineHeight} />
 
-    </div>
+    </fieldset>
   )
 }

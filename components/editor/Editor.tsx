@@ -30,7 +30,7 @@ export function parseEditorContent(value: string): object | string {
   }
 }
 
-export function Editor({ value, onChange, className, editorId, id, labelledBy, describedBy, invalid = false, scrollOffset = 120 }: EditorProps) {
+export function Editor({ value, onChange, className, editorId, id, labelledBy, describedBy, invalid = false, scrollOffset = 120 }: Readonly<EditorProps>) {
   const [imageDialog, setImageDialog] = useState<{ file?: File; initial?: ImageValue; position: number; editing: boolean }>()
   const isInternalUpdate = useRef(false)
   const lastEmittedValue = useRef<string | null>(null)
@@ -120,7 +120,7 @@ export function Editor({ value, onChange, className, editorId, id, labelledBy, d
   )
 }
 
-function EditorCount({ editor }: { editor: TipTapEditor }) {
+function EditorCount({ editor }: { readonly editor: TipTapEditor }) {
   const count = useEditorState({ editor, selector: ({ editor }) => ({
     words: editor.storage.characterCount?.words() ?? 0,
     characters: editor.storage.characterCount?.characters() ?? 0,

@@ -14,7 +14,7 @@ menus expose their checked option. Text-color and highlight controls open a name
 palette dialog: Tab moves through swatches, Enter or Space applies a color, and
 Escape dismisses the dialog and returns focus to its opening control.
 
-Save progress and completion are announced through a live status region. Failed
+Save progress is announced through a live status region; completion is announced once through the success toast. Failed
 saves focus the first invalid field, opening its settings card when needed. Failed
 publication checks focus the review dialog's feedback; **Keep editing** returns
 focus to the first invalid field. Input remains available throughout. The action

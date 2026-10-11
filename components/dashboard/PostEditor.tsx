@@ -71,7 +71,6 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
   const pendingErrorFocus = useRef(false)
   const reviewErrorRef = useRef<HTMLDivElement>(null)
   const genericErrorRef = useRef<HTMLParagraphElement>(null)
-  const [saveStatus, setSaveStatus] = useState('')
   const previewTrigger = useRef<HTMLButtonElement>(null)
   const publicationTrigger = useRef<HTMLButtonElement>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
@@ -138,7 +137,7 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
     ...Object.fromEntries(Object.entries(errors).map(([name, error]) => [name, [error.message ?? 'Check this field.']])),
   }), [publicationFieldErrors, errors])
   function describedBy(name: string) {
-    return `${name}-help${fieldErrors[name]?.length ? ` ${name}-error` : ''}`
+    return [`${name}-help`, fieldErrors[name]?.length ? `${name}-error` : undefined].filter(Boolean).join(' ')
   }
 
   function firstErrorTarget() {
@@ -204,7 +203,6 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
     if (recoveryPending) return
     setPublicationFieldErrors({})
     setPublicationError(undefined)
-    setSaveStatus('')
     setSaving(!publish)
     setPublishing(publish)
     try {
@@ -227,8 +225,8 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
         if (createdPost || !post) {
           setCreatedPost({ ...result.data, author: post?.author ?? null, category: categories.find(category => category.id === values.category_id) ?? null, tags: tags.filter(tag => values.tag_ids.includes(tag.id)) })
         } else router.refresh()
-        const message = publish ? 'Post saved and published!' : isPublished ? 'Published changes saved' : 'Post saved as draft'
-        setSaveStatus(message)
+        const savedMessage = isPublished ? 'Published changes saved' : 'Post saved as draft'
+        const message = publish ? 'Post saved and published!' : savedMessage
         toast.success(message)
         if (result.newsletterState) setSavedNewsletter(result.newsletterState)
         setNewsletterWarning(result.newsletterWarning ?? null)
@@ -248,7 +246,6 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
     setPublishing(true)
     setPublicationFieldErrors({})
     setPublicationError(undefined)
-    setSaveStatus('')
     const values = getValues()
     try {
       const expectedUpdatedAt = await recovery.beginSave()
@@ -272,7 +269,6 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
         if (createdPost) setCreatedPost({ ...createdPost, ...result.data })
         setReviewOpen(false)
         const message = isPublished ? 'Post unpublished' : 'Post saved and published!'
-        setSaveStatus(message)
         toast.success(message)
         if (result.newsletterState) setSavedNewsletter(result.newsletterState)
         setNewsletterWarning(result.newsletterWarning ?? null)
@@ -299,13 +295,20 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
     finally { setPreviewing(false) }
   }
 
+  let progressMessage = ''
+  if (saving) progressMessage = 'Saving post…'
+  else if (publishing) progressMessage = isPublished ? 'Unpublishing post…' : 'Publishing post…'
+
   return (
     <>
       <form ref={formRef} className="post-editor" aria-label="Post editor" onFocusCapture={event => {
         const bar = actionBarRef.current
         const target = event.target as HTMLElement
-        if (!bar || bar.contains(target) || !window.matchMedia('(min-width: 1024px)').matches) return
-        if (target.getBoundingClientRect().top < bar.getBoundingClientRect().bottom) {
+        // TipTap scrolls its caret; centering the entire article would move away from a clicked paragraph.
+        if (!bar || bar.contains(target) || target.isContentEditable || target.closest('[contenteditable="true"]') || !window.matchMedia('(min-width: 1024px)').matches) return
+        const bounds = target.getBoundingClientRect()
+        const barBottom = bar.getBoundingClientRect().bottom
+        if (bounds.height <= window.innerHeight - barBottom && bounds.top < barBottom) {
           target.scrollIntoView?.({ block: 'center', behavior: 'instant' })
         }
       }} onSubmit={event => { void handleSubmit(values => onSubmit(values), () => { pendingErrorFocus.current = true })(event) }} onChange={(event) => {
@@ -404,7 +407,7 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
           </div>
         </div>
 
-        <p role="status" aria-label="Post save status" aria-live="polite" aria-atomic="true" className="sr-only">{saving ? 'Saving post…' : publishing ? (isPublished ? 'Unpublishing post…' : 'Publishing post…') : saveStatus}</p>
+        <p role="status" aria-label="Post save status" aria-live="polite" aria-atomic="true" className="sr-only">{progressMessage}</p>
         {publicationError && !formControlError(fieldErrors) && <p ref={genericErrorRef} tabIndex={-1} role="alert" className="mb-4 text-sm text-destructive focus-visible:outline-2 focus-visible:outline-ring">{publicationError}</p>}
         {draftIdentity && <DraftRecoveryNotice recovery={recovery} />}
 
@@ -534,7 +537,7 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
               )}
               <label className="flex items-start gap-2 text-xs leading-relaxed">
                 <input type="checkbox" aria-invalid={!!fieldErrors.editorial_reviewed} {...register('editorial_reviewed')} aria-describedby={describedBy('editorial_reviewed')} className="mt-0.5" />
-                I have reviewed this article for accuracy, usefulness, attribution, taxonomy and SEO metadata.
+                <span>I have reviewed this article for accuracy, usefulness, attribution, taxonomy and SEO metadata.</span>
               </label>
               <FieldError name="editorial_reviewed" errors={fieldErrors} />
               <p id="editorial_reviewed-help" className="text-xs text-muted-foreground">Review is required for publication and live edits. Editing clears this confirmation. Incomplete work can be saved as a draft.</p>
@@ -604,9 +607,9 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
 
             {/* ── Tags card ──────────────────────────────── */}
             <SidebarCard icon={Tag} title="Tags">
-              <div role="group" tabIndex={-1} aria-label="Post tags" data-invalid={!!fieldErrors.tag_ids} aria-describedby={describedBy('tag_ids')}>
+              <fieldset className="min-w-0" tabIndex={-1} aria-label="Post tags" data-invalid={!!fieldErrors.tag_ids} aria-describedby={describedBy('tag_ids')}>
                 <TagSelector tags={tags} selectedIds={selectedTagIds ?? []} onToggle={toggleTag} error={tagsError} canManage={canManageTags} />
-              </div>
+              </fieldset>
               <p id="tag_ids-help" className="text-xs text-muted-foreground">Select relevant tags. Activate a selected tag to remove it.</p>
               <FieldError name="tag_ids" errors={fieldErrors} />
             </SidebarCard>

@@ -107,3 +107,45 @@ test('new writing can publish directly after human confirmation', async ({ page,
     if (id) await request.delete(`/api/posts/${id}`, { headers: { Authorization: `Bearer ${apiKey}` } })
   }
 })
+
+test('clicking into a long article preserves the viewport and keyboard navigation reveals the caret', async ({ page, request, apiKey }) => {
+  const headers = { Authorization: `Bearer ${apiKey}` }
+  const created = await request.post('/api/posts/create', {
+    headers,
+    data: {
+      title: 'Long article focus regression',
+      slug: `long-article-focus-${Date.now()}`,
+      content: Array.from({ length: 400 }, (_, index) => `<p>Paragraph ${index + 1}: keep the clicked text in view while editing this long article.</p>`).join(''),
+    },
+  })
+  expect(created.status()).toBe(201)
+  const id = (await created.json()).data.post.id as string
+  try {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await login(page)
+    await page.goto(`/dashboard/posts/${id}/edit`)
+    const editor = page.locator('.ProseMirror')
+    await expect(editor).toBeVisible()
+    await page.getByLabel('Post title').focus()
+    await page.evaluate(() => window.scrollTo({ top: 3000, behavior: 'instant' }))
+    const before = await page.evaluate(() => window.scrollY)
+    expect(before).toBe(3000)
+    const bounds = await editor.boundingBox()
+    if (!bounds) throw new Error('Article editor is missing')
+    await page.mouse.click(bounds.x + 80, 350)
+    await expect(editor).toBeFocused()
+    expect(Math.abs(await page.evaluate(() => window.scrollY) - before)).toBeLessThan(5)
+
+    await page.keyboard.press('Control+Home')
+    await expect.poll(() => page.evaluate(() => {
+      const selection = window.getSelection()
+      if (!selection?.rangeCount) return false
+      const caret = selection.getRangeAt(0).getBoundingClientRect()
+      const bar = document.querySelector('[data-editor-actions]')!.getBoundingClientRect()
+      return caret.top >= bar.bottom && caret.bottom <= window.innerHeight
+    })).toBe(true)
+    await expect(editor).toBeFocused()
+  } finally {
+    await request.delete(`/api/posts/${id}`, { headers })
+  }
+})

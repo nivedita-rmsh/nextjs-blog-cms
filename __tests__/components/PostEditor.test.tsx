@@ -412,14 +412,34 @@ describe('post editor accessibility', () => {
     await waitFor(() => expect(screen.getByLabelText('Cover image description (alt text)')).toHaveFocus())
     expect(createPost).not.toHaveBeenCalled()
   })
-  it('announces saving and completion', async () => {
+  it('announces progress locally and completion only through the toast', async () => {
     let finish!: (result: Awaited<ReturnType<typeof createPost>>) => void
     vi.mocked(createPost).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
     render(<PostEditor {...minimalProps} />)
     fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }))
     await waitFor(() => expect(screen.getByRole('status', { name: 'Post save status' })).toHaveTextContent('Saving post…'))
     await act(async () => finish({ data: editorPost }))
-    expect(screen.getByRole('status', { name: 'Post save status' })).toHaveTextContent('Post saved as draft')
+    expect(screen.getByRole('status', { name: 'Post save status' })).toBeEmptyDOMElement()
+    expect(toast.success).toHaveBeenCalledExactlyOnceWith('Post saved as draft')
+    expect(screen.queryByText('Post saved as draft')).not.toBeInTheDocument()
+  })
+  it.each([
+    { name: 'ordinary controls', height: 40, editable: false, shouldScroll: true },
+    { name: 'tall controls', height: 2000, editable: false, shouldScroll: false },
+    { name: 'editable article content', height: 40, editable: true, shouldScroll: false },
+  ])('only corrects obscured focus for $name when appropriate', ({ height, editable, shouldScroll }) => {
+    vi.mocked(window.matchMedia).mockReturnValue({ matches: true } as MediaQueryList)
+    const { container } = render(<PostEditor {...minimalProps} />)
+    const bar = container.querySelector('[data-editor-actions]')!
+    vi.spyOn(bar, 'getBoundingClientRect').mockReturnValue({ bottom: 100 } as DOMRect)
+    const target = screen.getByLabelText('Post title')
+    vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({ top: 20, height } as DOMRect)
+    if (editable) target.setAttribute('contenteditable', 'true')
+    const scroll = vi.fn()
+    target.scrollIntoView = scroll
+    fireEvent.focus(target)
+    if (shouldScroll) expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'center', behavior: 'instant' })
+    else expect(scroll).not.toHaveBeenCalled()
   })
   it('honors reduced motion and moves focus to the title for back to top', () => {
     vi.mocked(window.matchMedia).mockReturnValue({ matches: true } as MediaQueryList)
