@@ -153,7 +153,18 @@ export function sendMessage(params: SendMessageParams): AsyncGenerator<string> {
   if (params.provider === 'gemini') return streamGemini(params)
   throw new Error(`Unsupported provider: ${params.provider}`)
 }
+function parseGeneratedPostJson(rawJson: string): GeneratedPostData {
+  const cleaned = rawJson
+    .replace(/^```(?:json)?\n?/, '')
+    .replace(/\n?```$/, '')
+    .trim()
 
+  try {
+    return JSON.parse(cleaned) as GeneratedPostData
+  } catch {
+    throw new Error(`LLM returned invalid JSON: ${cleaned.slice(0, 200)}`)
+  }
+}
 export async function generateBlogPost(
   params: GenerateBlogPostParams
 ): Promise<GeneratedPostData> {
@@ -213,13 +224,7 @@ export async function generateBlogPost(
     rawJson = result.text ?? '{}'
   }
 
-  const cleaned = rawJson.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim()
-
-  try {
-    return JSON.parse(cleaned) as GeneratedPostData
-  } catch {
-    throw new Error(`LLM returned invalid JSON: ${cleaned.slice(0, 200)}`)
-  }
+  return parseGeneratedPostJson(rawJson)
 }
 
 export type HeadlessGenerateParams = {
@@ -296,13 +301,7 @@ Return ONLY a valid JSON object with NO markdown, NO code blocks:
     rawJson = result.text ?? '{}'
   }
 
-  const cleaned = rawJson.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim()
-
-  try {
-    return JSON.parse(cleaned) as GeneratedPostData
-  } catch {
-    throw new Error(`LLM returned invalid JSON: ${cleaned.slice(0, 200)}`)
-  }
+  return parseGeneratedPostJson(rawJson)
 }
 
 export async function generateChatTitle(
