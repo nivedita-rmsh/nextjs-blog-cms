@@ -35,6 +35,31 @@ describe('AVAILABLE_MODELS', () => {
   })
 })
 
+
+describe('inferProviderFromModel', () => {
+  it('infers Gemini from a Gemini model ID', async () => {
+    const { inferProviderFromModel } = await import(
+      '@/features/ai-assistant/llmService'
+    )
+    expect(inferProviderFromModel('gemini-2.5-flash')).toBe('gemini')
+  })
+
+  it('infers OpenAI from a GPT model ID', async () => {
+    const { inferProviderFromModel } = await import(
+      '@/features/ai-assistant/llmService'
+    )
+    expect(inferProviderFromModel('gpt-4o')).toBe('openai')
+  })
+
+  it('defaults to Claude for other model IDs', async () => {
+    const { inferProviderFromModel } = await import(
+      '@/features/ai-assistant/llmService'
+    )
+    expect(inferProviderFromModel('claude-sonnet-4-6')).toBe('claude')
+  })
+})
+
+
 // ─── buildSystemPrompt ────────────────────────────────────────────────────────
 
 describe('buildSystemPrompt', () => {

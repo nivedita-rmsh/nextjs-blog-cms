@@ -124,6 +124,17 @@ function resolveGeminiModel(model: string): string {
   return model
 }
 
+/**
+ * Resolves the provider from a model ID.
+ * Preserves the existing prefix-based selection behavior.
+ */
+export function inferProviderFromModel(model: string): LLMProvider {
+  if (model.startsWith('gemini')) return 'gemini'
+  if (model.startsWith('gpt')) return 'openai'
+  return 'claude'
+}
+
+
 // ─── Gemini streaming ─────────────────────────────────────────────────────────
 
 async function* streamGemini(params: SendMessageParams): AsyncGenerator<string> {
@@ -157,11 +168,7 @@ export function sendMessage(params: SendMessageParams): AsyncGenerator<string> {
 export async function generateBlogPost(
   params: GenerateBlogPostParams
 ): Promise<GeneratedPostData> {
-  const provider: LLMProvider = params.model.startsWith('gemini')
-    ? 'gemini'
-    : params.model.startsWith('gpt')
-      ? 'openai'
-      : 'claude'
+  const provider = inferProviderFromModel(params.model)
 
   const historyText = params.messages
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
