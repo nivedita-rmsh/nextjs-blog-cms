@@ -91,3 +91,7 @@ pnpm run dev
 ```
 
 Supabase URL/anon key, trusted site URL and the optional Google Analytics measurement ID are public configuration and may use `NEXT_PUBLIC_`. Provider fallback keys are optional and server-only; they do not replace per-user provider key setup in Developer Settings. Keep service-role, provider encryption, Resend, cron and webhook secrets server-only and out of Git. Configure `NEXT_PUBLIC_SITE_URL=http://localhost:3000`. Optional confirmation alerts use `ADMIN_EMAIL`, `RESEND_FROM_EMAIL` and `SLACK_WEBHOOK_URL`; see [webhooks](webhooks.md). See [password recovery](../features/password-recovery.md) for redirect/template/SMTP setup.
+
+## Social sign-in
+
+See [Google and GitHub authentication](social-auth.md) for provider applications, exact callback allowlists, environment-specific configuration, identity policy, and rollout verification. The committed local providers remain disabled until their credentials are configured.

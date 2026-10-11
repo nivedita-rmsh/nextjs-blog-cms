@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -12,6 +12,7 @@ import { register as registerAction } from '@/app/(auth)/register/actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { OAuthButtons } from '@/components/auth/OAuthButtons'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
 const registerSchema = z.object({
@@ -26,10 +27,12 @@ const registerSchema = z.object({
 
 type RegisterFormValues = z.infer<typeof registerSchema>
 
-export default function RegisterForm() {
+export default function RegisterForm({ next = '/dashboard', initialError = null }: { next?: string; initialError?: string | null }) {
   const router = useRouter()
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(initialError)
   const [loading, setLoading] = useState(false)
+  const [oauthPending, setOauthPending] = useState(false)
+  const submitting = useRef(false)
   const [needsConfirmation, setNeedsConfirmation] = useState(false)
 
   const { register, handleSubmit, clearErrors, formState: { errors } } = useForm<RegisterFormValues>({
@@ -37,21 +40,30 @@ export default function RegisterForm() {
   })
 
   async function onSubmit(values: RegisterFormValues) {
+    if (submitting.current || oauthPending) return
+    submitting.current = true
     setError(null)
     setLoading(true)
     const formData = new FormData()
     formData.set('email', values.email)
     formData.set('password', values.password)
     formData.set('full_name', values.full_name)
-    const result = await registerAction(formData)
-    if (result?.error) {
-      setError(result.error)
+    try {
+      const result = await registerAction(formData)
+      if (result?.error) {
+        setError(result.error)
+        setLoading(false)
+      } else if (result?.needsConfirmation) {
+        setNeedsConfirmation(true)
+        setLoading(false)
+      } else if (result?.success) {
+        router.push(next)
+      }
+    } catch {
+      setError('Unable to connect. Check your connection and try again.')
+    } finally {
+      submitting.current = false
       setLoading(false)
-    } else if (result?.needsConfirmation) {
-      setNeedsConfirmation(true)
-      setLoading(false)
-    } else if (result?.success) {
-      router.push('/dashboard')
     }
   }
 
@@ -66,7 +78,7 @@ export default function RegisterForm() {
           We sent a confirmation link to your email. Click it to activate your account.
         </p>
         <Link
-          href="/login"
+          href={`/login?next=${encodeURIComponent(next)}`}
           className="text-sm text-blue-600 font-medium hover:text-blue-700 transition-colors"
         >
           Back to sign in
@@ -83,19 +95,21 @@ export default function RegisterForm() {
         <p className="text-sm text-gray-500 mt-1">Start writing and managing your content</p>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        {error && (
-          <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-1 duration-200">
-            <AlertCircle />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+      {error && (
+        <Alert variant="destructive" className="mb-5">
+          <AlertCircle />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <OAuthButtons next={next} disabled={loading || oauthPending} onPendingChange={setOauthPending} onError={setError} />
 
+      <form aria-busy={loading || oauthPending} onSubmit={event => void handleSubmit(onSubmit)(event)} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="full_name" className="text-sm font-medium text-gray-700">Full name</Label>
           <div className="relative">
             <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
             <Input
+              disabled={loading || oauthPending}
               id="full_name"
               placeholder="Jane Smith"
               className="pl-9 h-10"
@@ -114,6 +128,7 @@ export default function RegisterForm() {
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
             <Input
+              disabled={loading || oauthPending}
               id="email"
               type="email"
               placeholder="you@example.com"
@@ -133,6 +148,7 @@ export default function RegisterForm() {
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
             <Input
+              disabled={loading || oauthPending}
               id="password"
               type="password"
               placeholder="Min. 8 characters"
@@ -152,6 +168,7 @@ export default function RegisterForm() {
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
             <Input
+              disabled={loading || oauthPending}
               id="confirmPassword"
               type="password"
               placeholder="Repeat your password"
@@ -168,7 +185,7 @@ export default function RegisterForm() {
 
         <Button
           type="submit"
-          disabled={loading}
+          disabled={loading || oauthPending}
           className="w-full h-10 mt-2 bg-linear-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-0 shadow-xs shadow-blue-500/20 transition-all duration-200 hover:shadow-md hover:shadow-blue-500/20 hover:-translate-y-px active:translate-y-0"
         >
           {loading ? (
@@ -184,7 +201,7 @@ export default function RegisterForm() {
 
       <p className="text-sm text-gray-500 text-center mt-6">
         Already have an account?{' '}
-        <Link href="/login" className="text-blue-600 font-medium hover:text-blue-700 transition-colors">
+        <Link href={`/login?next=${encodeURIComponent(next)}`} className="text-blue-600 font-medium hover:text-blue-700 transition-colors">
           Sign in
         </Link>
       </p>

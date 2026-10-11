@@ -69,3 +69,5 @@ against the dedicated disposable test environment described in [testing](../deve
 browser test requests a real email, follows its actual link in a fresh browser,
 checks validation, changes the password, verifies new-password sign-in and
 old-password rejection, and verifies that the same link cannot be reused.
+
+Accounts with Google/GitHub identities use this same verified email and MFA flow to set a first password or reset an existing one. Their Security panel links here instead of requiring a current password. See [social authentication](../setup/social-auth.md).

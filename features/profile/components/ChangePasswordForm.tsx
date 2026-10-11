@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -26,7 +27,7 @@ const schema = z
 
 type FormValues = z.infer<typeof schema>
 
-export function ChangePasswordForm() {
+export function ChangePasswordForm({ useEmailRecovery = false }: { useEmailRecovery?: boolean }) {
   const [saving, setSaving] = useState(false)
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<FormValues>({
@@ -47,6 +48,19 @@ export function ChangePasswordForm() {
       setSaving(false)
     }
   }
+
+  if (useEmailRecovery) return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Security</CardTitle>
+        <CardDescription>Your account can sign in with Google or GitHub.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">To set or reset a password, verify your email using a password reset link. Your authenticator is also required if two-factor authentication is enabled.</p>
+        <Link href="/forgot-password" className="text-sm underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">Set or reset password by email</Link>
+      </CardContent>
+    </Card>
+  )
 
   return (
     <Card>

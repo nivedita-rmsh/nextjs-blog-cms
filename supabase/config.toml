@@ -153,7 +153,7 @@ enabled = true
 # in emails.
 site_url = "http://127.0.0.1:3000"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["http://127.0.0.1:3000/auth/callback", "http://localhost:3000/auth/callback", "http://127.0.0.1:3000/auth/callback?next=/reset-password", "http://localhost:3000/auth/callback?next=/reset-password"]
+additional_redirect_urls = ["http://127.0.0.1:3000/auth/callback?flow=oauth", "http://localhost:3000/auth/callback?flow=oauth", "http://127.0.0.1:3000/auth/callback", "http://localhost:3000/auth/callback", "http://127.0.0.1:3000/auth/callback?next=/reset-password", "http://localhost:3000/auth/callback?next=/reset-password"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to the local API URL (http://127.0.0.1:<port>/auth/v1).
@@ -390,3 +390,20 @@ s3_region = "env(S3_REGION)"
 s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
+
+# Enable only after configuring dedicated provider applications; see docs/setup/social-auth.md.
+# Hosted projects need the equivalent settings in Authentication > Sign In / Providers.
+[auth.external.google]
+enabled = false
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+redirect_uri = ""
+skip_nonce_check = false
+email_optional = false
+
+[auth.external.github]
+enabled = false
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET)"
+redirect_uri = ""
+email_optional = false

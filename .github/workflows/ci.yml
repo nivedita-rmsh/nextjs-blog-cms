@@ -159,6 +159,9 @@ jobs:
       - name: Run API and browser tests
         run: pnpm run test:e2e
 
+      - name: Verify OAuth controls with isolated provider navigation
+        run: pnpm exec playwright test --config=e2e/oauth-ui.config.ts
+
       - name: Upload failed test artifacts
         if: failure()
         uses: actions/upload-artifact@v7

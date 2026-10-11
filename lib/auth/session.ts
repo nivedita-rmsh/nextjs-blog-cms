@@ -10,8 +10,18 @@ import type { Profile } from '@/lib/supabase/types'
  */
 export async function getProfile(): Promise<Profile | null> {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) return null
+
+  // Provider login is not an MFA exemption. Protect actions/APIs using this
+  // shared helper, including routes that do not pass through the dashboard proxy.
+  try {
+    const { data: assurance, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+    const enrolled = user.factors?.some(factor => factor.status === 'verified')
+    if (error || !assurance?.currentLevel || !assurance.nextLevel || ((enrolled || assurance.nextLevel === 'aal2') && assurance.currentLevel !== 'aal2')) return null
+  } catch {
+    return null
+  }
 
   const { data: profile } = await supabase
     .from('profiles')

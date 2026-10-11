@@ -38,3 +38,10 @@ describe('ChangePasswordForm', () => {
     await waitFor(() => expect(mockUpdatePassword).toHaveBeenCalledWith('current123', 'newpass123'))
   })
 })
+
+
+it('offers verified recovery instead of asking provider accounts for a current password', () => {
+  render(<ChangePasswordForm useEmailRecovery />)
+  expect(screen.queryByLabelText(/current password/i)).not.toBeInTheDocument()
+  expect(screen.getByRole('link', { name: /set or reset password by email/i })).toHaveAttribute('href', '/forgot-password')
+})

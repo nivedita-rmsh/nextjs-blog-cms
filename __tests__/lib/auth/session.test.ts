@@ -26,6 +26,7 @@ const fakeProfile = { id: 'u1', role: 'admin', email: 'a@b.com', full_name: 'Adm
 function makeSupabase(userId: string | null, profile: unknown = fakeProfile) {
   return {
     auth: {
+      mfa: { getAuthenticatorAssuranceLevel: vi.fn().mockResolvedValue({ data: { currentLevel: "aal1", nextLevel: "aal1" }, error: null }) },
       getUser: vi.fn().mockResolvedValue({
         data: { user: userId ? { id: userId } : null },
       }),
@@ -94,4 +95,35 @@ describe('requirePermission', () => {
     await expect(requirePermission('posts:create')).rejects.toThrow('NEXT_REDIRECT')
     expect(mockRedirect).toHaveBeenCalledWith('/login')
   })
+})
+
+
+describe('server MFA authorization for every sign-in method', () => {
+  it.each([
+    { data: { currentLevel: 'aal1', nextLevel: 'aal2' }, error: null },
+    { data: null, error: { message: 'unavailable' } },
+    { data: null, error: null },
+    { data: { currentLevel: null, nextLevel: null }, error: null },
+  ])('denies sensitive profile access before MFA or on missing assurance', async assurance => {
+    const client = makeSupabase('u1')
+    client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue(assurance as never)
+    mockCreateClient.mockResolvedValue(client as never)
+    expect(await getProfile()).toBeNull()
+    expect(client.from).not.toHaveBeenCalled()
+  })
+  it('allows completed MFA', async () => {
+    const client = makeSupabase('u1')
+    client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({ data: { currentLevel: 'aal2', nextLevel: 'aal2' }, error: null })
+    mockCreateClient.mockResolvedValue(client as never)
+    expect(await getProfile()).toEqual(fakeProfile)
+  })
+})
+
+
+it('uses authoritative enrolled factors even when cached session data says AAL1 is enough', async () => {
+  const client = makeSupabase('u1')
+  client.auth.getUser.mockResolvedValue({ data: { user: { id: 'u1', factors: [{ status: 'verified' }] } } } as never)
+  mockCreateClient.mockResolvedValue(client as never)
+  expect(await getProfile()).toBeNull()
+  expect(client.from).not.toHaveBeenCalled()
 })
