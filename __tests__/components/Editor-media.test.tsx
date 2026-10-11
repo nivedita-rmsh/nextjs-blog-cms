@@ -9,6 +9,7 @@ vi.mock('@tiptap/react', () => ({
     mocks.options = options
     return { getJSON: () => ({ type: 'doc', content: [] }), commands: { setContent: vi.fn() }, setEditable: mocks.setEditable, storage: {} }
   },
+  useEditorState: ({ editor, selector }: { editor: { storage: object }; selector: (state: { editor: { storage: object } }) => unknown }) => selector({ editor }),
   EditorContent: () => null,
 }))
 vi.mock('@/components/editor/Toolbar', () => ({ Toolbar: () => null }))

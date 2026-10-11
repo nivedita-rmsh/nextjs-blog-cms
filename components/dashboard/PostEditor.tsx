@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { pastedImageFile } from '@/features/posts/media/clipboard'
 import { useForm, useWatch, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -65,6 +65,12 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
   const post = createdIsLatest ? createdPost : initialPost
   const [savedNewsletter, setSavedNewsletter] = useState<PostNewsletterState>()
   const newsletter = initialPost ? initialNewsletter : savedNewsletter ?? initialNewsletter
+  const [scrollOffset, setScrollOffset] = useState(120)
+  const actionBarRef = useRef<HTMLDivElement>(null)
+  const formRef = useRef<HTMLFormElement>(null)
+  const pendingErrorFocus = useRef(false)
+  const reviewErrorRef = useRef<HTMLDivElement>(null)
+  const genericErrorRef = useRef<HTMLParagraphElement>(null)
   const previewTrigger = useRef<HTMLButtonElement>(null)
   const publicationTrigger = useRef<HTMLButtonElement>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
@@ -93,10 +99,23 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
     return () => window.removeEventListener('scroll', onScroll, options)
   }, [])
 
+  useEffect(() => {
+    const bar = actionBarRef.current
+    if (!bar || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      const offset = Math.max(72, bar.getBoundingClientRect().height + 16)
+      setScrollOffset(offset)
+      formRef.current?.style.setProperty('--post-editor-toolbar-height', `${offset}px`)
+    })
+    observer.observe(bar)
+    return () => observer.disconnect()
+  }, [])
+
   const isPublished = post?.status === 'published'
 
   const form = useForm<PostFormValues>({
       resolver: zodResolver(postSchema),
+      shouldFocusError: false,
       defaultValues: {
         editorial_reviewed: false,
         title: post?.title ?? '',
@@ -113,6 +132,32 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
     })
 
   const { register, handleSubmit, control, setValue, getValues, formState: { errors } } = form
+  const fieldErrors = useMemo<FieldErrors>(() => ({
+    ...publicationFieldErrors,
+    ...Object.fromEntries(Object.entries(errors).map(([name, error]) => [name, [error.message ?? 'Check this field.']])),
+  }), [publicationFieldErrors, errors])
+  function describedBy(name: string) {
+    return [`${name}-help`, fieldErrors[name]?.length ? `${name}-error` : undefined].filter(Boolean).join(' ')
+  }
+
+  function firstErrorTarget() {
+    const target = formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"], [data-invalid="true"]') ?? genericErrorRef.current
+    // Errors in collapsed cards must be visible before focus is restored.
+    if (target) for (const details of formRef.current?.querySelectorAll('details') ?? []) {
+      if (details.contains(target)) details.open = true
+    }
+    return target
+  }
+
+  useEffect(() => {
+    if (!pendingErrorFocus.current || saving || publishing || (!publicationError && !Object.keys(fieldErrors).length)) return
+    const target = reviewOpen ? reviewErrorRef.current : firstErrorTarget()
+    if (!target) return
+    pendingErrorFocus.current = false
+    target.focus({ preventScroll: true })
+    target?.scrollIntoView?.({ block: 'center', behavior: 'instant' })
+  }, [fieldErrors, publicationError, saving, publishing, reviewOpen])
+
   const recovery = useDraftRecovery(form, draftIdentity, post?.id ?? null, post?.updated_at ?? null)
   const recoveryPending = !recovery.ready || recovery.candidates.length > 0
 
@@ -168,6 +213,7 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
           ? await createPost({ ...values, auto_slug: !values.slug.trim() || (!manuallyEditedSlug && values.slug === generatedSlug) }, draftIdentity?.userId, draftIdentity?.documentId, true)
           : await createPost({ ...values, auto_slug: !values.slug.trim() || (!manuallyEditedSlug && values.slug === generatedSlug) }, draftIdentity?.userId, draftIdentity?.documentId)
       if (result.error || !result.data) {
+        pendingErrorFocus.current = true
         setPublicationFieldErrors(result.fieldErrors ?? {})
         setPublicationError(result.error ?? 'The post could not be saved. Your input is preserved.')
         toast.error(result.error ?? 'The post could not be saved. Your input is preserved.')
@@ -179,13 +225,16 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
         if (createdPost || !post) {
           setCreatedPost({ ...result.data, author: post?.author ?? null, category: categories.find(category => category.id === values.category_id) ?? null, tags: tags.filter(tag => values.tag_ids.includes(tag.id)) })
         } else router.refresh()
-        toast.success(publish ? 'Post saved and published!' : isPublished ? 'Published changes saved' : 'Post saved as draft')
+        const savedMessage = isPublished ? 'Published changes saved' : 'Post saved as draft'
+        const message = publish ? 'Post saved and published!' : savedMessage
+        toast.success(message)
         if (result.newsletterState) setSavedNewsletter(result.newsletterState)
         setNewsletterWarning(result.newsletterWarning ?? null)
         if (result.newsletterWarning) toast.warning(result.newsletterWarning)
         setReviewOpen(false)
       }
     } catch {
+      pendingErrorFocus.current = true
       setPublicationError('Save failed. Check your connection or sign in again, then retry. Your input is preserved.')
       toast.error('Save failed. Check your connection or sign in again, then retry. Your input is preserved.')
       await recovery.finishSave()
@@ -204,6 +253,7 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
         ? await unpublishPost(post.id, draftIdentity?.userId)
         : await publishPost(post.id, { ...values, confirm_slug_change: slugChangeConfirmed }, expectedUpdatedAt, draftIdentity?.userId)
       if (result.error || !result.data) {
+        pendingErrorFocus.current = true
         setPublicationFieldErrors(result.fieldErrors ?? {})
         setPublicationError(result.error ?? 'The post could not be saved. Your input is preserved.')
         toast.error(result.error ?? 'The post could not be saved. Your input is preserved.')
@@ -218,13 +268,15 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
         }
         if (createdPost) setCreatedPost({ ...createdPost, ...result.data })
         setReviewOpen(false)
-        toast.success(isPublished ? 'Post unpublished' : 'Post saved and published!')
+        const message = isPublished ? 'Post unpublished' : 'Post saved and published!'
+        toast.success(message)
         if (result.newsletterState) setSavedNewsletter(result.newsletterState)
         setNewsletterWarning(result.newsletterWarning ?? null)
         if (result.newsletterWarning) toast.warning(result.newsletterWarning)
         router.refresh()
       }
     } catch {
+      pendingErrorFocus.current = true
       setPublicationError('Save failed. Check your connection or sign in again, then retry. Your input is preserved.')
       toast.error('Save failed. Check your connection or sign in again, then retry. Your input is preserved.')
       await recovery.finishSave()
@@ -243,13 +295,27 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
     finally { setPreviewing(false) }
   }
 
+  let progressMessage = ''
+  if (saving) progressMessage = 'Saving post…'
+  else if (publishing) progressMessage = isPublished ? 'Unpublishing post…' : 'Publishing post…'
+
   return (
     <>
-      <form onSubmit={handleSubmit(values => onSubmit(values))} onChange={(event) => {
+      <form ref={formRef} className="post-editor" aria-label="Post editor" onFocusCapture={event => {
+        const bar = actionBarRef.current
+        const target = event.target as HTMLElement
+        // TipTap scrolls its caret; centering the entire article would move away from a clicked paragraph.
+        if (!bar || bar.contains(target) || target.isContentEditable || target.closest('[contenteditable="true"]') || !window.matchMedia('(min-width: 1024px)').matches) return
+        const bounds = target.getBoundingClientRect()
+        const barBottom = bar.getBoundingClientRect().bottom
+        if (bounds.height <= window.innerHeight - barBottom && bounds.top < barBottom) {
+          target.scrollIntoView?.({ block: 'center', behavior: 'instant' })
+        }
+      }} onSubmit={event => { void handleSubmit(values => onSubmit(values), () => { pendingErrorFocus.current = true })(event) }} onChange={(event) => {
         if (event.target.getAttribute('name') !== 'editorial_reviewed') setValue('editorial_reviewed', false)
       }}>
         {/* ── Sticky action bar ───────────────────────────────────── */}
-        <div className="sticky top-0 z-20 -mx-4 px-4 md:-mx-8 md:px-8 py-3 mb-6 bg-background/80 backdrop-blur-md border-b border-border/50 flex items-center justify-between gap-4 flex-wrap">
+        <div ref={actionBarRef} data-editor-actions className="lg:sticky lg:top-0 z-20 -mx-4 px-4 md:-mx-8 md:px-8 py-3 mb-6 bg-background/80 backdrop-blur-md border-b border-border/50 flex items-center justify-between gap-4 flex-wrap">
           <button
             type="button"
             disabled={saving || publishing}
@@ -341,6 +407,8 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
           </div>
         </div>
 
+        <p role="status" aria-label="Post save status" aria-live="polite" aria-atomic="true" className="sr-only">{progressMessage}</p>
+        {publicationError && !formControlError(fieldErrors) && <p ref={genericErrorRef} tabIndex={-1} role="alert" className="mb-4 text-sm text-destructive focus-visible:outline-2 focus-visible:outline-ring">{publicationError}</p>}
         {draftIdentity && <DraftRecoveryNotice recovery={recovery} />}
 
         {/* ── Main layout ─────────────────────────────────────────── */}
@@ -351,34 +419,36 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
 
             {/* Title */}
             <div className="space-y-1">
+              <Label htmlFor="post-title" className="sr-only">Post title</Label>
               <input
+                id="post-title"
                 {...register('title')}
                 aria-label="Post title"
-                aria-invalid={!!publicationFieldErrors.title}
-                aria-describedby="title-error"
+                aria-invalid={!!fieldErrors.title}
+                aria-describedby={describedBy('title')}
                 onBlur={autoSlug}
                 placeholder="Post title…"
-                className="w-full text-3xl font-bold tracking-tight bg-transparent border-0 outline-hidden placeholder:text-muted-foreground/40 text-foreground resize-none leading-tight"
+                className="w-full text-3xl font-bold tracking-tight bg-transparent border-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring placeholder:text-muted-foreground/40 text-foreground resize-none leading-tight"
               />
-              {errors.title && (
-                <p className="text-xs text-destructive pl-0.5">{errors.title.message}</p>
-              )}
+              <p id="title-help" className="text-xs text-muted-foreground">Use a descriptive title of 10–160 characters to publish. Drafts may be incomplete.</p>
             </div>
 
-            <FieldError name="title" errors={publicationFieldErrors} />
+            <FieldError name="title" errors={fieldErrors} />
 
             {/* Slug row */}
             <div className="flex items-center gap-2 py-2 border-y border-dashed border-border/70">
               <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               <span className="text-xs text-muted-foreground shrink-0">slug /</span>
+              <Label htmlFor="post-slug" className="sr-only">Slug</Label>
               <input
+                id="post-slug"
                 {...register('slug')}
                 aria-label="Slug"
                 readOnly={isPublished && !allowSlugChange}
-                aria-invalid={!!publicationFieldErrors.slug}
-                aria-describedby="slug-error"
+                aria-invalid={!!fieldErrors.slug}
+                aria-describedby={describedBy('slug')}
                 placeholder="auto-generated-from-title"
-                className="flex-1 text-xs text-muted-foreground bg-transparent border-0 outline-hidden placeholder:text-muted-foreground/40 font-mono"
+                className="flex-1 text-xs text-muted-foreground bg-transparent border-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring placeholder:text-muted-foreground/40 font-mono"
                 onChange={(e) => {
                   setManuallyEditedSlug(true)
                   setSlugChangeConfirmed(false)
@@ -387,6 +457,7 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
               />
             </div>
 
+            <p id="slug-help" className="text-xs text-muted-foreground">URL path using lowercase letters, numbers and hyphens; generated from the title for new posts.</p>
             {normalizedSlug && slug !== normalizedSlug && (
               <p className="text-xs text-muted-foreground" aria-live="polite">URL preview: /blog/{normalizedSlug}</p>
             )}
@@ -401,40 +472,42 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
                 <span>Confirm this URL change. The old URL will permanently redirect to the new URL.</span>
               </label>
             )}
-            <FieldError name="slug" errors={publicationFieldErrors} />
+            <FieldError name="slug" errors={fieldErrors} />
 
             {/* Excerpt */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+              <Label htmlFor="post-excerpt" className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
                 Excerpt
               </Label>
               <Textarea
+                id="post-excerpt"
                 {...register('excerpt')}
                 aria-label="Excerpt"
-                aria-invalid={!!publicationFieldErrors.excerpt}
-                aria-describedby="excerpt-error"
+                aria-invalid={!!fieldErrors.excerpt}
+                aria-describedby={describedBy('excerpt')}
                 placeholder="A short summary displayed in post listings and meta descriptions…"
                 rows={3}
                 className="resize-none text-sm leading-relaxed bg-muted/30 border-border/60 focus-visible:border-blue-400/60 focus-visible:ring-blue-400/20 placeholder:text-muted-foreground/40"
               />
             </div>
 
-            <p className="text-xs text-muted-foreground">Used in listings and as the default search description. Required to publish.</p>
-            <FieldError name="excerpt" errors={publicationFieldErrors} />
+            <p id="excerpt-help" className="text-xs text-muted-foreground">Used in listings and as the default search description. Use 40–500 characters to publish.</p>
+            <FieldError name="excerpt" errors={fieldErrors} />
 
             {/* Content editor */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+              <Label id="content-label" className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
                 Content
               </Label>
               <Controller
                 name="content"
                 control={control}
                 render={({ field }) => (
-                  <Editor editorId={draftIdentity?.userId} value={field.value} onChange={(value) => { field.onChange(value); setValue('editorial_reviewed', false) }} />
+                  <Editor scrollOffset={scrollOffset} id="post-content" labelledBy="content-label" describedBy={describedBy('content')} invalid={!!fieldErrors.content} editorId={draftIdentity?.userId} value={field.value} onChange={(value) => { field.onChange(value); setValue('editorial_reviewed', false) }} />
                 )}
               />
-              <FieldError name="content" errors={publicationFieldErrors} />
+              <p id="content-help" className="text-xs text-muted-foreground">Write at least 200 readable words to publish. Use the formatting controls above the article.</p>
+              <FieldError name="content" errors={fieldErrors} />
             </div>
           </div>
 
@@ -456,47 +529,52 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
                 <li>Relevant category and tags; accurate SEO title and description.</li>
               </ul>
               <p className="text-xs text-muted-foreground">Author: {post?.author?.full_name || 'Your profile display name (required)'}</p>
-              <FieldError name="author_id" errors={publicationFieldErrors} />
+              <FieldError name="author_id" errors={fieldErrors} />
               {flaggedForReview && (
                 <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
                   Review flagged text: TODO, TBD, coming soon or work in progress may indicate unfinished content. Confirm that these terms are appropriate in context before publishing.
                 </p>
               )}
               <label className="flex items-start gap-2 text-xs leading-relaxed">
-                <input type="checkbox" {...register('editorial_reviewed')} aria-describedby="editorial_reviewed-error" className="mt-0.5" />
-                I have reviewed this article for accuracy, usefulness, attribution, taxonomy and SEO metadata.
+                <input type="checkbox" aria-invalid={!!fieldErrors.editorial_reviewed} {...register('editorial_reviewed')} aria-describedby={describedBy('editorial_reviewed')} className="mt-0.5" />
+                <span>I have reviewed this article for accuracy, usefulness, attribution, taxonomy and SEO metadata.</span>
               </label>
-              <FieldError name="editorial_reviewed" errors={publicationFieldErrors} />
-              <p className="text-xs text-muted-foreground">Review is required for publication and live edits. Editing clears this confirmation. Incomplete work can be saved as a draft.</p>
+              <FieldError name="editorial_reviewed" errors={fieldErrors} />
+              <p id="editorial_reviewed-help" className="text-xs text-muted-foreground">Review is required for publication and live edits. Editing clears this confirmation. Incomplete work can be saved as a draft.</p>
             </SidebarCard>
 
             {/* ── Settings card ──────────────────────────── */}
-            <SidebarCard icon={Settings2} title="Settings" expandable forceOpen={!!publicationFieldErrors.cover_image}>
+            <SidebarCard icon={Settings2} title="Settings" expandable forceOpen={!!fieldErrors.cover_image || !!fieldErrors.cover_image_alt || !!fieldErrors.category_id}>
               {/* Cover image */}
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Cover Image</Label>
+                <Label htmlFor="post-cover_image" className="text-xs text-muted-foreground">Cover Image</Label>
                 {coverImage && draftIdentity && <CoverImagePreview key={coverImage} src={coverImage} alt={coverImageAlt || 'Cover preview'} editorId={draftIdentity.userId} />}
                 <Button type="button" variant="outline" size="sm" disabled={!draftIdentity || recoveryPending} onClick={() => { setCoverPaste(undefined); setCoverDialogOpen(true) }}>Choose cover image</Button>
                 {coverImage && <Button type="button" variant="ghost" size="sm" onClick={() => { setValue('cover_image', '', { shouldDirty: true }); setValue('cover_image_alt', '', { shouldDirty: true }); setValue('editorial_reviewed', false) }}>Remove cover image</Button>}
                 <div className="relative">
                   <ImageIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/60" />
                   <Input
+                    id="post-cover_image"
                     {...register('cover_image')}
                     onPaste={event => {
                       const file = pastedImageFile(event.clipboardData)
                       if (file && draftIdentity) { event.preventDefault(); setCoverPaste(file); setCoverDialogOpen(true) }
                     }}
+                    aria-invalid={!!fieldErrors.cover_image}
                     aria-label="Cover image"
-                    aria-describedby="cover_image-error"
+                    aria-describedby={describedBy('cover_image')}
                     placeholder="https://…"
                     className="pl-9 text-sm h-9 bg-muted/30 border-border/60"
                   />
                 </div>
               </div>
 
-              <FieldError name="cover_image" errors={publicationFieldErrors} />
+              <p id="cover_image-help" className="text-xs text-muted-foreground">Optional. Choose an image or paste an allowed image URL.</p>
+              <FieldError name="cover_image" errors={fieldErrors} />
               <Label htmlFor="cover-alt">Cover image description (alt text)</Label>
-              <Input id="cover-alt" {...register('cover_image_alt')} maxLength={1000} placeholder="Describe the image for readers who cannot see it" />
+              <Input id="cover-alt" aria-invalid={!!fieldErrors.cover_image_alt} aria-describedby={describedBy('cover_image_alt')} {...register('cover_image_alt')} maxLength={1000} placeholder="Describe the image for readers who cannot see it" />
+              <p id="cover_image_alt-help" className="text-xs text-muted-foreground">Describe meaningful visual details in up to 1,000 characters.</p>
+              <FieldError name="cover_image_alt" errors={fieldErrors} />
               {coverDialogOpen && draftIdentity && <ImageDialog cover editorId={draftIdentity.userId} initialFile={coverPaste}
                 initial={coverImage ? { src: coverImage, alt: coverImageAlt ?? '' } : undefined}
                 onClose={() => setCoverDialogOpen(false)} onSave={image => {
@@ -508,9 +586,12 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
 
               {/* Category */}
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Category</Label>
+                <Label htmlFor="post-category_id" className="text-xs text-muted-foreground">Category</Label>
                 <select
                   aria-label="Category"
+                  aria-invalid={!!fieldErrors.category_id}
+                  aria-describedby={describedBy('category_id')}
+                  id="post-category_id"
                   {...register('category_id')}
                   className="w-full h-9 rounded-md border border-border/60 bg-muted/30 px-3 py-1 text-sm shadow-none focus:outline-hidden focus:border-blue-400/60 focus:ring-2 focus:ring-blue-400/20 transition-colors"
                 >
@@ -519,43 +600,55 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
                     <option key={cat.id} value={cat.id}>{cat.name}</option>
                   ))}
                 </select>
+                <p id="category_id-help" className="text-xs text-muted-foreground">Choose a relevant category, or leave this blank.</p>
+                <FieldError name="category_id" errors={fieldErrors} />
               </div>
             </SidebarCard>
 
             {/* ── Tags card ──────────────────────────────── */}
             <SidebarCard icon={Tag} title="Tags">
-              <TagSelector tags={tags} selectedIds={selectedTagIds ?? []} onToggle={toggleTag} error={tagsError} canManage={canManageTags} />
+              <fieldset className="min-w-0" tabIndex={-1} aria-label="Post tags" data-invalid={!!fieldErrors.tag_ids} aria-describedby={describedBy('tag_ids')}>
+                <TagSelector tags={tags} selectedIds={selectedTagIds ?? []} onToggle={toggleTag} error={tagsError} canManage={canManageTags} />
+              </fieldset>
+              <p id="tag_ids-help" className="text-xs text-muted-foreground">Select relevant tags. Activate a selected tag to remove it.</p>
+              <FieldError name="tag_ids" errors={fieldErrors} />
             </SidebarCard>
 
             {/* ── SEO card ───────────────────────────────── */}
-            <SidebarCard icon={BarChart3} title="SEO" expandable forceOpen={!!publicationFieldErrors.seo_title || !!publicationFieldErrors.seo_description}>
+            <SidebarCard icon={BarChart3} title="SEO" expandable forceOpen={!!fieldErrors.seo_title || !!fieldErrors.seo_description}>
               <p className="text-xs text-muted-foreground">Leave these blank to use the post title and excerpt in search results.</p>
-              <FieldError name="seo_title" errors={publicationFieldErrors} />
-              <FieldError name="seo_description" errors={publicationFieldErrors} />
+              <FieldError name="seo_title" errors={fieldErrors} />
+              <FieldError name="seo_description" errors={fieldErrors} />
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Meta Title</Label>
+                <Label htmlFor="post-seo_title" className="text-xs text-muted-foreground">SEO title</Label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/60" />
                   <Input
+                    id="post-seo_title"
                     {...register('seo_title')}
                     aria-label="SEO title"
-                    aria-describedby="seo_title-error"
+                    aria-invalid={!!fieldErrors.seo_title}
+                    aria-describedby={describedBy('seo_title')}
                     placeholder="Overrides post title in search…"
                     className="pl-9 text-sm h-9 bg-muted/30 border-border/60"
                   />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Meta Description</Label>
+                <Label htmlFor="post-seo_description" className="text-xs text-muted-foreground">SEO description</Label>
                 <Textarea
+                  id="post-seo_description"
                   {...register('seo_description')}
                   aria-label="SEO description"
-                  aria-describedby="seo_description-error"
+                  aria-invalid={!!fieldErrors.seo_description}
+                  aria-describedby={describedBy('seo_description')}
                   placeholder="Concise summary for search results…"
                   rows={3}
                   className="resize-none text-sm leading-relaxed bg-muted/30 border-border/60 focus-visible:border-blue-400/60 focus-visible:ring-blue-400/20 placeholder:text-muted-foreground/40"
                 />
               </div>
+              <p id="seo_title-help" className="text-xs text-muted-foreground">Optional search title; defaults to the post title.</p>
+              <p id="seo_description-help" className="text-xs text-muted-foreground">Optional search description; defaults to the excerpt.</p>
             </SidebarCard>
           </div>
         </div>
@@ -575,7 +668,7 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
         </DialogContent>
       </Dialog>
       <Dialog open={reviewOpen} onOpenChange={open => { if (!saving && !publishing) setReviewOpen(open) }}>
-        <DialogContent finalFocus={publicationTrigger} className="max-h-[90dvh] overflow-y-auto" showCloseButton={!saving && !publishing}>
+        <DialogContent finalFocus={() => publicationError || Object.keys(fieldErrors).length ? firstErrorTarget() ?? publicationTrigger.current : publicationTrigger.current} className="max-h-[90dvh] overflow-y-auto" showCloseButton={!saving && !publishing}>
           <DialogHeader><DialogTitle>Review publication</DialogTitle><DialogDescription>Your current writing will become public after the publication checks pass.</DialogDescription></DialogHeader>
           <p className="break-all">Destination: {destinationUrl}</p>
           {!post && <p className="text-xs text-muted-foreground">An automatically generated URL may receive a suffix if already reserved. View Post shows the final URL after publication.</p>}
@@ -585,10 +678,10 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
             <input type="checkbox" disabled={saving || publishing} checked={editorialReviewed} onChange={event => setValue('editorial_reviewed', event.target.checked)} />
             I have reviewed this article for accuracy, usefulness, attribution, taxonomy and SEO metadata.
           </label>
-          {publicationError && <div role="alert" className="space-y-2 text-sm text-destructive"><p>{publicationError}</p>{Object.entries(publicationFieldErrors).map(([field, messages]) => <p key={field}>{messages.join(' ')}</p>)}</div>}
+          {(publicationError || Object.keys(fieldErrors).length > 0) && <div ref={reviewErrorRef} tabIndex={-1} role="alert" className="space-y-2 text-sm text-destructive focus-visible:outline-2 focus-visible:outline-ring"><p>{publicationError ?? 'Check the highlighted fields before saving.'}</p>{Object.entries(fieldErrors).map(([field, messages]) => <p key={field}>{messages.join(' ')}</p>)}</div>}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={saving || publishing} onClick={() => setReviewOpen(false)}>Keep editing</Button>
-            <Button type="button" disabled={saving || publishing || recoveryPending} onClick={() => { if (post) void handlePublishToggle(); else void handleSubmit(values => onSubmit(values, true))() }}>{saving || publishing ? 'Publishing…' : 'Confirm publication'}</Button>
+            <Button type="button" disabled={saving || publishing || recoveryPending} onClick={() => { if (post) void handlePublishToggle(); else void handleSubmit(values => onSubmit(values, true), () => { pendingErrorFocus.current = true })() }}>{saving || publishing ? 'Publishing…' : 'Confirm publication'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -598,7 +691,10 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
           variant="secondary"
           size="icon"
           className="fixed bottom-6 right-6 z-50 rounded-full shadow-md"
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          onClick={() => {
+            formRef.current?.querySelector<HTMLElement>('#post-title')?.focus({ preventScroll: true })
+            window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
+          }}
           aria-label="Back to top"
         >
           <ArrowUp className="h-4 w-4" />
@@ -679,4 +775,8 @@ function DraftRecoveryNotice({ recovery }: { readonly recovery: ReturnType<typeo
       )}
     </div>
   )
+}
+
+function formControlError(errors: FieldErrors) {
+  return ['title', 'slug', 'excerpt', 'content', 'cover_image', 'cover_image_alt', 'category_id', 'tag_ids', 'seo_title', 'seo_description', 'editorial_reviewed'].some(name => errors[name]?.length)
 }

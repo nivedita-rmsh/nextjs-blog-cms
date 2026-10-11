@@ -289,3 +289,28 @@
   flex: 1;
 }
 .tiptap-task-item > div > p { margin: 0; }
+
+/* Keep editor focus visible below the desktop action bar and mobile navigation. */
+.post-editor :is(input, textarea, select, button, [tabindex], [contenteditable]) {
+  scroll-margin-block-start: 5rem;
+}
+.post-editor :is(input, textarea, select, button, [tabindex], [contenteditable]):focus-visible,
+.ProseMirror:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+.ProseMirror:focus-visible { outline-offset: -2px; }
+@media (min-width: 1024px) {
+  .post-editor :is(input, textarea, select, button, [tabindex], [contenteditable]) {
+    scroll-margin-block-start: var(--post-editor-toolbar-height, 12rem);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

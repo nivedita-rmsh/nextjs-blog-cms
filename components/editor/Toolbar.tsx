@@ -1,20 +1,24 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { type Editor } from '@tiptap/react'
+import { useId, useRef, useState } from 'react'
+import { type Editor, useEditorState } from '@tiptap/react'
 import {
   Bold, Italic, Underline, Strikethrough,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   List, ListOrdered, ListTodo, Quote, Code,
   Link, Image as ImageIcon, Minus,
 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
@@ -72,90 +76,49 @@ function getHeadingLabel(editor: Editor): string {
   return 'Normal'
 }
 
-// ── ColorPanel (portal) ───────────────────────────────────────────────────────
-interface ColorPanelProps {
+// The shared dialog supplies keyboard containment, Escape dismissal and focus return.
+function ColorPanel({ editor, triggerRef, initialSection, onClose, id }: Readonly<{
   editor: Editor
-  triggerRef: React.RefObject<HTMLDivElement | null>
+  triggerRef: React.RefObject<HTMLButtonElement | null>
+  initialSection: 'text' | 'highlight'
   onClose: () => void
-}
-
-function ColorPanel({ editor, triggerRef, onClose }: ColorPanelProps) {
-  const panelRef = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState({ top: 0, left: 0 })
-
-  // Position below trigger
-  useEffect(() => {
-    if (!triggerRef.current) return
-    const rect = triggerRef.current.getBoundingClientRect()
-    setPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX })
-  }, [triggerRef])
-
-  // Close on outside mousedown — guard with contains() so swatch clicks don't close early
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (panelRef.current?.contains(e.target as Node)) return
-      if (triggerRef.current?.contains(e.target as Node)) return
-      onClose()
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [onClose, triggerRef])
-
-  const activeColor = editor.getAttributes('textStyle').color ?? null
-  const activeHighlight = editor.getAttributes('highlight').color ?? null
-
-  return createPortal(
-    <div
-      ref={panelRef}
-      style={{ position: 'absolute', top: pos.top, left: pos.left, zIndex: 9999 }}
-      className="bg-popover border border-border rounded-lg shadow-lg p-3 w-64"
-    >
-      {/* Text color section */}
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Text Color</p>
-      <div className="grid grid-cols-8 gap-1 mb-3">
-        {TEXT_COLORS.map(({ hex, label }) => (
-          <button
-            key={hex}
-            type="button"
-            title={label}
-            style={{ background: hex }}
-            className={`w-6 h-6 rounded-sm cursor-pointer border ${hex === '#ffffff' ? 'border-border' : 'border-transparent'} ${activeColor === hex ? 'ring-2 ring-primary ring-offset-1' : ''}`}
-            onClick={() => {
-              if (activeColor === hex) {
-                editor.chain().focus().unsetColor().run()
-              } else {
-                editor.chain().focus().setColor(hex).run()
-              }
-              onClose()
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Highlight section */}
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Highlight</p>
+  id: string
+}>) {
+  const textRef = useRef<HTMLButtonElement>(null)
+  const highlightRef = useRef<HTMLButtonElement>(null)
+  return <DialogContent id={id} finalFocus={triggerRef} initialFocus={initialSection === 'text' ? textRef : highlightRef} className="max-h-[90dvh] overflow-y-auto">
+    <DialogHeader>
+      <DialogTitle>Text color and highlight</DialogTitle>
+      <DialogDescription>Choose a color. Select the active color again to remove it. Press Escape to close.</DialogDescription>
+    </DialogHeader>
+    {([
+      { section: 'text', title: 'Text color', colors: TEXT_COLORS, active: editor.getAttributes('textStyle').color, firstRef: textRef },
+      { section: 'highlight', title: 'Highlight', colors: HIGHLIGHT_COLORS, active: editor.getAttributes('highlight').color, firstRef: highlightRef },
+    ] as const).map(({ section, title, colors, active, firstRef }) => <fieldset key={section}>
+      <legend className="mb-2 text-xs font-medium">{title}</legend>
       <div className="grid grid-cols-8 gap-1">
-        {HIGHLIGHT_COLORS.map(({ hex, label }) => (
-          <button
-            key={hex}
-            type="button"
-            title={label}
-            style={{ background: hex }}
-            className={`w-6 h-6 rounded-sm cursor-pointer border border-border ${activeHighlight === hex ? 'ring-2 ring-primary ring-offset-1' : ''}`}
-            onClick={() => {
-              if (activeHighlight === hex) {
-                editor.chain().focus().unsetHighlight().run()
-              } else {
-                editor.chain().focus().toggleHighlight({ color: hex }).run()
-              }
-              onClose()
-            }}
-          />
-        ))}
+        {colors.map(({ hex, label }, index) => <button
+          ref={index === 0 ? firstRef : undefined}
+          key={hex}
+          type="button"
+          title={`${title}: ${label}`}
+          aria-label={`${title}: ${label}`}
+          aria-pressed={active === hex}
+          style={{ background: hex }}
+          className="size-7 rounded-sm border border-border cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary aria-pressed:ring-2 aria-pressed:ring-primary aria-pressed:ring-offset-1"
+          onClick={() => {
+            // Preserve the editor selection while the dialog owns DOM focus.
+            if (section === 'text') {
+              if (active === hex) editor.chain().unsetColor().run()
+              else editor.chain().setColor(hex).run()
+            } else if (active === hex) editor.chain().unsetHighlight().run()
+            else editor.chain().setHighlight({ color: hex }).run()
+            onClose()
+          }}
+        />)}
       </div>
-    </div>,
-    document.body
-  )
+    </fieldset>)}
+  </DialogContent>
 }
 
 // ── LineHeightMenu ────────────────────────────────────────────────────────────
@@ -166,76 +129,85 @@ interface LineHeightMenuProps {
 
 function LineHeightMenu({ editor, activeLineHeight }: LineHeightMenuProps) {
   const [customValue, setCustomValue] = useState('')
+  const [customOpen, setCustomOpen] = useState(false)
+  const [customError, setCustomError] = useState('')
+  const inputId = useId()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   function applyCustom() {
-    const n = parseFloat(customValue)
-    if (!customValue || isNaN(n) || n < 0.5 || n > 10) return
-    editor.chain().focus().setLineHeight(String(n)).run()
-    setCustomValue('')
+    const n = Number(customValue)
+    if (!customValue.trim() || !Number.isFinite(n) || n < 0.5 || n > 10) {
+      setCustomError('Enter a line spacing between 0.5 and 10.')
+      inputRef.current?.focus()
+      return
+    }
+    editor.chain().setLineHeight(String(n)).run()
+    setCustomOpen(false)
   }
 
-  return (
+  return <>
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="inline-flex items-center justify-between h-8 px-2 text-xs min-w-[52px] rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground gap-1"
+        ref={triggerRef}
+        className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary inline-flex items-center justify-between h-8 px-2 text-xs min-w-[52px] rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground gap-1"
         title="Line spacing"
+        aria-label={`Line spacing: ${activeLineHeight ?? 'Default'}`}
       >
-        <span>↕</span>
+        <span aria-hidden="true">↕</span>
         <span>{activeLineHeight ?? 'Default'}</span>
-        <span className="opacity-50">▾</span>
+        <span aria-hidden="true" className="opacity-50">▾</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="min-w-[120px] w-auto">
-        <DropdownMenuItem onSelect={() => editor.chain().focus().unsetLineHeight().run()}>
-          <span className={!activeLineHeight ? 'font-semibold' : ''}>Default</span>
-        </DropdownMenuItem>
-        {LINE_HEIGHTS.map((lh) => (
-          <DropdownMenuItem key={lh} onSelect={() => {
-            if (activeLineHeight === lh) {
-              editor.chain().focus().unsetLineHeight().run()
-            } else {
-              editor.chain().focus().setLineHeight(lh).run()
-            }
-          }}>
-            <span className={activeLineHeight === lh ? 'font-semibold' : ''}>{lh}</span>
-          </DropdownMenuItem>
-        ))}
-        {/* Custom input — stop propagation so the menu stays open */}
-        <div
-          className="px-2 pt-1 pb-2 border-t border-border mt-1"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Custom</p>
-          <div className="flex gap-1">
-            <input
-              type="number"
-              min={0.5}
-              max={10}
-              step={0.1}
-              placeholder="e.g. 1.8"
-              value={customValue}
-              onChange={(e) => setCustomValue(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') applyCustom() }}
-              className="h-7 w-full rounded-sm border border-input bg-background px-2 text-xs focus:outline-hidden focus:ring-1 focus:ring-ring"
-            />
-            <button
-              type="button"
-              onClick={applyCustom}
-              className="h-7 px-2 rounded-sm bg-primary text-primary-foreground text-xs hover:bg-primary/90"
-            >
-              Set
-            </button>
-          </div>
-        </div>
+        <DropdownMenuRadioGroup value={activeLineHeight ?? 'default'} onValueChange={value => {
+          if (value === 'default') editor.chain().focus().unsetLineHeight().run()
+          else editor.chain().focus().setLineHeight(value).run()
+        }}>
+          <DropdownMenuRadioItem value="default" closeOnClick>Default</DropdownMenuRadioItem>
+          {LINE_HEIGHTS.map(lh => <DropdownMenuRadioItem key={lh} value={lh} closeOnClick>{lh}</DropdownMenuRadioItem>)}
+        </DropdownMenuRadioGroup>
+        <DropdownMenuItem onClick={() => {
+          setCustomValue(activeLineHeight ?? '')
+          setCustomError('')
+          setCustomOpen(true)
+        }}>Custom…</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  )
+    <Dialog open={customOpen} onOpenChange={setCustomOpen}>
+      <DialogContent initialFocus={inputRef} finalFocus={triggerRef}>
+        <DialogHeader>
+          <DialogTitle>Custom line spacing</DialogTitle>
+          <DialogDescription id={`${inputId}-help`}>Enter a value between 0.5 and 10.</DialogDescription>
+        </DialogHeader>
+        <Label htmlFor={inputId}>Line spacing</Label>
+        <Input ref={inputRef} id={inputId} type="number" min={0.5} max={10} step="any"
+          value={customValue} aria-invalid={!!customError}
+          aria-describedby={[`${inputId}-help`, customError ? `${inputId}-error` : undefined].filter(Boolean).join(' ')}
+          onChange={event => setCustomValue(event.target.value)}
+          onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); applyCustom() } }} />
+        {customError && <p id={`${inputId}-error`} role="alert" className="text-sm text-destructive">{customError}</p>}
+        <Button type="button" onClick={applyCustom}>Apply spacing</Button>
+      </DialogContent>
+    </Dialog>
+  </>
 }
 
 // ── Toolbar ───────────────────────────────────────────────────────────────────
 export function Toolbar({ editor, onImage }: ToolbarProps) {
   const [colorPanelOpen, setColorPanelOpen] = useState(false)
-  const colorTriggerRef = useRef<HTMLDivElement | null>(null)
+  const colorTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const [initialSection, setInitialSection] = useState<'text' | 'highlight'>('text')
+  const colorPanelId = useId()
+  // Subscribe only to values displayed by the toolbar, including selection changes.
+  useEditorState({ editor, selector: ({ editor }) => ({
+    marks: ['bold', 'italic', 'underline', 'strike', 'subscript', 'superscript', 'link', 'highlight'].map(mark => editor.isActive(mark)),
+    blocks: ['bulletList', 'orderedList', 'taskList', 'blockquote', 'codeBlock'].map(block => editor.isActive(block)),
+    heading: getHeadingLabel(editor),
+    alignment: editor.getAttributes('paragraph').textAlign ?? editor.getAttributes('heading').textAlign,
+    color: editor.getAttributes('textStyle').color,
+    highlight: editor.getAttributes('highlight').color,
+    lineHeight: editor.getAttributes('paragraph').lineHeight ?? editor.getAttributes('heading').lineHeight,
+  }) })
 
   function addLink() {
     const url = window.prompt('Enter URL')
@@ -250,22 +222,21 @@ export function Toolbar({ editor, onImage }: ToolbarProps) {
 
   const activeColor = editor.getAttributes('textStyle').color ?? '#000000'
   const activeHighlight = editor.getAttributes('highlight').color ?? '#fef9c3'
+  const highlightLabel = editor.isActive('highlight') ? activeHighlight : 'none'
 
   return (
-    <div className="flex flex-wrap items-center gap-1 p-2 border-b bg-muted/30">
+    <fieldset aria-label="Content formatting" className="min-w-0 flex flex-wrap items-center gap-1 p-2 border-b bg-muted/30">
 
       {/* Group 1: Heading dropdown */}
       <DropdownMenu>
-        <DropdownMenuTrigger className="inline-flex items-center justify-between h-8 px-2 text-xs min-w-[90px] rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground">
+        <DropdownMenuTrigger aria-label={`Paragraph style: ${getHeadingLabel(editor)}`} className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary inline-flex items-center justify-between h-8 px-2 text-xs min-w-[90px] rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground">
           {getHeadingLabel(editor)}
-          <span className="ml-1 opacity-50">▾</span>
+          <span aria-hidden="true" className="ml-1 opacity-50">▾</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="min-w-[140px] w-auto">
-          {HEADING_OPTIONS.map(({ label, action }) => (
-            <DropdownMenuItem key={label} onSelect={() => action(editor)}>
-              {label}
-            </DropdownMenuItem>
-          ))}
+          <DropdownMenuRadioGroup value={getHeadingLabel(editor)} onValueChange={value => HEADING_OPTIONS.find(option => option.label === value)?.action(editor)}>
+            {HEADING_OPTIONS.map(({ label }) => <DropdownMenuRadioItem key={label} value={label} closeOnClick>{label}</DropdownMenuRadioItem>)}
+          </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -278,49 +249,46 @@ export function Toolbar({ editor, onImage }: ToolbarProps) {
         { icon: Underline, action: () => editor.chain().focus().toggleUnderline().run(), isActive: editor.isActive('underline'), title: 'Underline' },
         { icon: Strikethrough, action: () => editor.chain().focus().toggleStrike().run(), isActive: editor.isActive('strike'), title: 'Strikethrough' },
       ].map(({ icon: Icon, action, isActive, title }) => (
-        <Button key={title} type="button" variant={isActive ? 'secondary' : 'ghost'} size="sm" className="h-8 w-8 p-0" onClick={action} title={title}>
+        <Button key={title} type="button" variant={isActive ? 'secondary' : 'ghost'} size="sm" className="h-8 w-8 p-0" onClick={action} title={title} aria-label={title} aria-pressed={isActive}>
           <Icon className="h-4 w-4" />
         </Button>
       ))}
       {/* Subscript / Superscript as compact text buttons */}
-      <Button type="button" variant={editor.isActive('subscript') ? 'secondary' : 'ghost'} size="sm" className="h-8 w-8 p-0 text-xs" onClick={() => editor.chain().focus().toggleSubscript().run()} title="Subscript">
+      <Button type="button" variant={editor.isActive('subscript') ? 'secondary' : 'ghost'} size="sm" className="h-8 w-8 p-0 text-xs" onClick={() => editor.chain().focus().toggleSubscript().run()} title="Subscript" aria-label="Subscript" aria-pressed={editor.isActive('subscript')}>
         X<sub>2</sub>
       </Button>
-      <Button type="button" variant={editor.isActive('superscript') ? 'secondary' : 'ghost'} size="sm" className="h-8 w-8 p-0 text-xs" onClick={() => editor.chain().focus().toggleSuperscript().run()} title="Superscript">
+      <Button type="button" variant={editor.isActive('superscript') ? 'secondary' : 'ghost'} size="sm" className="h-8 w-8 p-0 text-xs" onClick={() => editor.chain().focus().toggleSuperscript().run()} title="Superscript" aria-label="Superscript" aria-pressed={editor.isActive('superscript')}>
         X<sup>2</sup>
       </Button>
 
       <Separator orientation="vertical" className="h-6 mx-1" />
 
-      {/* Group 3: Color & Highlight — both buttons share one panel anchored to a wrapper ref */}
-      <div ref={colorTriggerRef} className="flex items-center">
-        <button
-          type="button"
-          title="Text color"
-          className="h-8 w-auto px-1.5 rounded-sm hover:bg-accent flex flex-col items-center justify-center gap-0.5"
-          onClick={() => setColorPanelOpen(o => !o)}
-        >
-          <span className="text-xs font-semibold leading-none">A</span>
-          <span className="block h-0.5 w-4 rounded-sm" style={{ background: activeColor }} />
-        </button>
-        <button
-          type="button"
-          title="Highlight"
-          className="h-8 w-auto px-1.5 rounded-sm hover:bg-accent flex flex-col items-center justify-center gap-0.5"
-          onClick={() => setColorPanelOpen(o => !o)}
-        >
-          <span className="text-xs font-semibold leading-none" style={{ background: activeHighlight, padding: '0 2px', borderRadius: 2 }}>A</span>
-          <span className="block h-0.5 w-4 rounded-sm" style={{ background: activeHighlight }} />
-        </button>
-      </div>
-
-      {colorPanelOpen && (
-        <ColorPanel
-          editor={editor}
-          triggerRef={colorTriggerRef}
-          onClose={() => setColorPanelOpen(false)}
-        />
-      )}
+      {/* Both color controls open the same keyboard-operable palette. */}
+      <Dialog open={colorPanelOpen} onOpenChange={setColorPanelOpen}>
+        <div className="flex items-center">
+          {(['text', 'highlight'] as const).map(section => <Button
+            key={section}
+            type="button"
+            variant="ghost"
+            size="sm"
+            title={section === 'text' ? 'Text color' : 'Highlight'}
+            aria-label={section === 'text' ? `Text color: ${activeColor}` : `Highlight: ${highlightLabel}`}
+            aria-haspopup="dialog"
+            aria-expanded={colorPanelOpen && initialSection === section}
+            aria-controls={colorPanelOpen ? colorPanelId : undefined}
+            className="h-8 px-1.5 flex flex-col items-center justify-center gap-0.5"
+            onClick={event => {
+              colorTriggerRef.current = event.currentTarget
+              setInitialSection(section)
+              setColorPanelOpen(true)
+            }}
+          >
+            <span aria-hidden="true" className="text-xs font-semibold leading-none" style={section === 'highlight' ? { background: activeHighlight, padding: '0 2px', borderRadius: 2 } : undefined}>A</span>
+            <span aria-hidden="true" className="block h-0.5 w-4 rounded-sm" style={{ background: section === 'text' ? activeColor : activeHighlight }} />
+          </Button>)}
+        </div>
+        {colorPanelOpen && <ColorPanel editor={editor} triggerRef={colorTriggerRef} initialSection={initialSection} id={colorPanelId} onClose={() => setColorPanelOpen(false)} />}
+      </Dialog>
 
       <Separator orientation="vertical" className="h-6 mx-1" />
 
@@ -331,7 +299,7 @@ export function Toolbar({ editor, onImage }: ToolbarProps) {
         { icon: AlignRight, align: 'right', title: 'Align Right' },
         { icon: AlignJustify, align: 'justify', title: 'Justify' },
       ].map(({ icon: Icon, align, title }) => (
-        <Button key={align} type="button" variant={editor.isActive({ textAlign: align }) ? 'secondary' : 'ghost'} size="sm" className="h-8 w-8 p-0" onClick={() => editor.chain().focus().setTextAlign(align).run()} title={title}>
+        <Button key={align} type="button" variant={editor.isActive({ textAlign: align }) ? 'secondary' : 'ghost'} size="sm" className="h-8 w-8 p-0" onClick={() => editor.chain().focus().setTextAlign(align).run()} title={title} aria-label={title} aria-pressed={editor.isActive({ textAlign: align })}>
           <Icon className="h-4 w-4" />
         </Button>
       ))}
@@ -346,7 +314,7 @@ export function Toolbar({ editor, onImage }: ToolbarProps) {
         { icon: Quote, action: () => editor.chain().focus().toggleBlockquote().run(), isActive: editor.isActive('blockquote'), title: 'Blockquote' },
         { icon: Code, action: () => editor.chain().focus().toggleCodeBlock().run(), isActive: editor.isActive('codeBlock'), title: 'Code Block' },
       ].map(({ icon: Icon, action, isActive, title }) => (
-        <Button key={title} type="button" variant={isActive ? 'secondary' : 'ghost'} size="sm" className="h-8 w-8 p-0" onClick={action} title={title}>
+        <Button key={title} type="button" variant={isActive ? 'secondary' : 'ghost'} size="sm" className="h-8 w-8 p-0" onClick={action} title={title} aria-label={title} aria-pressed={isActive}>
           <Icon className="h-4 w-4" />
         </Button>
       ))}
@@ -354,13 +322,13 @@ export function Toolbar({ editor, onImage }: ToolbarProps) {
       <Separator orientation="vertical" className="h-6 mx-1" />
 
       {/* Group 6: Insert */}
-      <Button type="button" variant={editor.isActive('link') ? 'secondary' : 'ghost'} size="sm" className="h-8 w-8 p-0" onClick={addLink} title="Link">
+      <Button type="button" variant={editor.isActive('link') ? 'secondary' : 'ghost'} size="sm" className="h-8 w-8 p-0" onClick={addLink} title="Link" aria-label="Link" aria-pressed={editor.isActive('link')}>
         <Link className="h-4 w-4" />
       </Button>
       <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={onImage} title="Insert or edit image" aria-label="Insert or edit image">
         <ImageIcon className="h-4 w-4" />
       </Button>
-<Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Horizontal Rule">
+      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Horizontal Rule" aria-label="Insert horizontal rule">
         <Minus className="h-4 w-4" />
       </Button>
 
@@ -369,6 +337,6 @@ export function Toolbar({ editor, onImage }: ToolbarProps) {
       {/* Group 7: Line height dropdown */}
       <LineHeightMenu editor={editor} activeLineHeight={activeLineHeight} />
 
-    </div>
+    </fieldset>
   )
 }

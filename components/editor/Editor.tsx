@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { pastedImageFile } from '@/features/posts/media/clipboard'
-import { useEditor, EditorContent as TipTapContent } from '@tiptap/react'
+import { useEditor, useEditorState, type Editor as TipTapEditor, EditorContent as TipTapContent } from '@tiptap/react'
 import { extensions } from './extensions'
 import { Toolbar } from './Toolbar'
 import { ImageDialog } from './ImageDialog'
@@ -12,6 +12,11 @@ interface EditorProps {
   value: string
   onChange: (value: string) => void
   className?: string
+  id?: string
+  labelledBy?: string
+  describedBy?: string
+  invalid?: boolean
+  scrollOffset?: number
   editorId?: string
 }
 
@@ -25,7 +30,7 @@ export function parseEditorContent(value: string): object | string {
   }
 }
 
-export function Editor({ value, onChange, className, editorId }: EditorProps) {
+export function Editor({ value, onChange, className, editorId, id, labelledBy, describedBy, invalid = false, scrollOffset = 120 }: Readonly<EditorProps>) {
   const [imageDialog, setImageDialog] = useState<{ file?: File; initial?: ImageValue; position: number; editing: boolean }>()
   const isInternalUpdate = useRef(false)
   const lastEmittedValue = useRef<string | null>(null)
@@ -47,6 +52,9 @@ export function Editor({ value, onChange, className, editorId }: EditorProps) {
     content: value ? parseEditorContent(value) : '',
     onUpdate: handleUpdate,
     editorProps: {
+      // ProseMirror must keep the caret below sticky controls when navigating long articles.
+      scrollThreshold: { top: scrollOffset, bottom: 24, left: 16, right: 16 },
+      scrollMargin: { top: scrollOffset, bottom: 24, left: 16, right: 16 },
       handlePaste: (view, event) => {
         const file = pastedImageFile(event.clipboardData)
         if (!file || !editorId) return false
@@ -64,7 +72,13 @@ export function Editor({ value, onChange, className, editorId }: EditorProps) {
         return true
       },
       attributes: {
-        class: 'prose prose-sm sm:prose-base max-w-none focus:outline-hidden min-h-[300px] p-4',
+        class: 'prose prose-sm sm:prose-base max-w-none min-h-[300px] p-4',
+        role: 'textbox',
+        'aria-multiline': 'true',
+        ...(id ? { id } : {}),
+        ...(labelledBy ? { 'aria-labelledby': labelledBy } : { 'aria-label': 'Article content' }),
+        ...(describedBy ? { 'aria-describedby': describedBy } : {}),
+        'aria-invalid': String(invalid),
       },
     },
   })
@@ -101,11 +115,17 @@ export function Editor({ value, onChange, className, editorId }: EditorProps) {
           else editor.chain().focus().setTextSelection(imageDialog.position).setImage(image).run()
         }} />}
       <TipTapContent editor={editor} />
-      <div className="px-4 py-1.5 border-t text-xs text-muted-foreground text-right select-none">
-        {editor.storage.characterCount?.words() ?? 0} words
-        {' · '}
-        {editor.storage.characterCount?.characters() ?? 0} characters
-      </div>
+      <EditorCount editor={editor} />
     </div>
   )
+}
+
+function EditorCount({ editor }: { readonly editor: TipTapEditor }) {
+  const count = useEditorState({ editor, selector: ({ editor }) => ({
+    words: editor.storage.characterCount?.words() ?? 0,
+    characters: editor.storage.characterCount?.characters() ?? 0,
+  }) })
+  return <div className="px-4 py-1.5 border-t text-xs text-muted-foreground text-right select-none">
+    {count.words} words · {count.characters} characters
+  </div>
 }

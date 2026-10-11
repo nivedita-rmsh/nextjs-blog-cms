@@ -7,6 +7,20 @@ publication and do not queue newsletter emails. The dashboard retains unsaved in
 and displays actionable field errors. Its post-list publish action opens the editor
 for review instead of publishing immediately.
 
+The post editor associates fields with their labels, guidance and validation errors.
+The article body is a named multiline textbox. Formatting buttons announce their
+selected state as the caret or selection moves; paragraph style and line-spacing
+menus expose their checked option. Text-color and highlight controls open a named
+palette dialog: Tab moves through swatches, Enter or Space applies a color, and
+Escape dismisses the dialog and returns focus to its opening control.
+
+Save progress is announced through a live status region; completion is announced once through the success toast. Failed
+saves focus the first invalid field, opening its settings card when needed. Failed
+publication checks focus the review dialog's feedback; **Keep editing** returns
+focus to the first invalid field. Input remains available throughout. The action
+bar stays in normal flow on smaller screens, desktop focus targets account for the
+sticky bar, and reduced-motion preferences disable smooth scrolling and animation.
+
 The shared policy in `features/posts/publication.ts` requires:
 
 - A descriptive title of **10–160 readable characters**.

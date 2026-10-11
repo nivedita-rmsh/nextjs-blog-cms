@@ -29,8 +29,12 @@ vi.mock('@/features/posts/preview', () => ({ previewPost: vi.fn() }))
 
 // ── Mock TipTap Editor ────────────────────────────────────────────────────────
 vi.mock('@/components/editor/Editor', () => ({
-  Editor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => <textarea aria-label="Article body" value={value} onChange={event => onChange(event.target.value)} />,
+  Editor: ({ value, onChange, id, describedBy, invalid }: { value: string; onChange: (value: string) => void; id?: string; describedBy?: string; invalid?: boolean }) => <textarea id={id} aria-describedby={describedBy} aria-invalid={invalid} aria-label="Article body" value={value} onChange={event => onChange(event.target.value)} />,
 }))
+
+beforeEach(() => {
+  Object.defineProperty(window, 'matchMedia', { configurable: true, writable: true, value: vi.fn(() => ({ matches: false })) })
+})
 
 const minimalProps = {
   categories: [],
@@ -354,5 +358,97 @@ describe('writing screen actions and private preview', () => {
     expect(screen.getByLabelText('SEO title').closest('details')).not.toHaveAttribute('open')
     expect(screen.getByLabelText('Cover image').closest('details')).not.toHaveAttribute('open')
     expect(screen.getByText('Leave these blank to use the post title and excerpt in search results.')).toBeInTheDocument()
+  })
+})
+
+describe('post editor accessibility', () => {
+  beforeEach(() => vi.clearAllMocks())
+  it('pairs visible labels with fields and connects guidance without dangling error IDs', () => {
+    render(<PostEditor {...minimalProps} />)
+    for (const name of ['Post title', 'Slug', 'Excerpt', 'Cover image', 'Category', 'SEO title', 'SEO description']) {
+      const field = screen.getByLabelText(name)
+      expect(field.id).not.toBe('')
+      expect(document.querySelector(`label[for="${field.id}"]`)).not.toBeNull()
+      for (const id of field.getAttribute('aria-describedby')!.split(' ')) expect(document.getElementById(id)).not.toBeNull()
+    }
+  })
+  it('focuses the first failed field after a rejected draft save', async () => {
+    vi.mocked(createPost).mockResolvedValueOnce({ error: 'Invalid fields', fieldErrors: { excerpt: ['Fix the excerpt'], title: ['Fix the title'] } })
+    render(<PostEditor {...minimalProps} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }))
+    await waitFor(() => expect(screen.getByLabelText('Post title')).toHaveFocus())
+    expect(screen.getByLabelText('Post title')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('Post title')).toHaveAccessibleDescription(/Fix the title/)
+    const excerpt = screen.getByLabelText('Excerpt')
+    excerpt.focus()
+    fireEvent.change(excerpt, { target: { value: 'Revising a different field' } })
+    expect(excerpt).toHaveFocus()
+  })
+  it('focuses publication feedback then returns to the invalid content when editing resumes', async () => {
+    vi.mocked(createPost).mockResolvedValueOnce({ error: 'Publication blocked', fieldErrors: { content: ['Write at least 200 words'] } })
+    render(<PostEditor {...minimalProps} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Publish' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm publication' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveFocus())
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }))
+    await waitFor(() => expect(screen.getByLabelText('Article body')).toHaveFocus())
+    expect(screen.getByLabelText('Article body')).toHaveAccessibleDescription(/Write at least 200 words/)
+  })
+  it('opens a collapsed settings card before returning focus to its error', async () => {
+    vi.mocked(createPost).mockResolvedValueOnce({ error: 'Publication blocked', fieldErrors: { cover_image: ['Choose an allowed cover host'] } })
+    render(<PostEditor {...minimalProps} />)
+    const field = screen.getByLabelText('Cover image')
+    fireEvent.click(screen.getByRole('button', { name: 'Publish' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm publication' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveFocus())
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }))
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.closest('details')).toHaveAttribute('open')
+  })
+  it('reports client validation and focuses the invalid alt text without submitting', async () => {
+    render(<PostEditor {...minimalProps} />)
+    fireEvent.change(screen.getByLabelText('Cover image description (alt text)'), { target: { value: 'x'.repeat(1001) } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }))
+    await waitFor(() => expect(screen.getByLabelText('Cover image description (alt text)')).toHaveFocus())
+    expect(createPost).not.toHaveBeenCalled()
+  })
+  it('announces progress locally and completion only through the toast', async () => {
+    let finish!: (result: Awaited<ReturnType<typeof createPost>>) => void
+    vi.mocked(createPost).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    render(<PostEditor {...minimalProps} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }))
+    await waitFor(() => expect(screen.getByRole('status', { name: 'Post save status' })).toHaveTextContent('Saving post…'))
+    await act(async () => finish({ data: editorPost }))
+    expect(screen.getByRole('status', { name: 'Post save status' })).toBeEmptyDOMElement()
+    expect(toast.success).toHaveBeenCalledExactlyOnceWith('Post saved as draft')
+    expect(screen.queryByText('Post saved as draft')).not.toBeInTheDocument()
+  })
+  it.each([
+    { name: 'ordinary controls', height: 40, editable: false, shouldScroll: true },
+    { name: 'tall controls', height: 2000, editable: false, shouldScroll: false },
+    { name: 'editable article content', height: 40, editable: true, shouldScroll: false },
+  ])('only corrects obscured focus for $name when appropriate', ({ height, editable, shouldScroll }) => {
+    vi.mocked(window.matchMedia).mockReturnValue({ matches: true } as MediaQueryList)
+    const { container } = render(<PostEditor {...minimalProps} />)
+    const bar = container.querySelector('[data-editor-actions]')!
+    vi.spyOn(bar, 'getBoundingClientRect').mockReturnValue({ bottom: 100 } as DOMRect)
+    const target = screen.getByLabelText('Post title')
+    vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({ top: 20, height } as DOMRect)
+    if (editable) target.setAttribute('contenteditable', 'true')
+    const scroll = vi.fn()
+    target.scrollIntoView = scroll
+    fireEvent.focus(target)
+    if (shouldScroll) expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'center', behavior: 'instant' })
+    else expect(scroll).not.toHaveBeenCalled()
+  })
+  it('honors reduced motion and moves focus to the title for back to top', () => {
+    vi.mocked(window.matchMedia).mockReturnValue({ matches: true } as MediaQueryList)
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    render(<PostEditor {...minimalProps} />)
+    act(() => { Object.defineProperty(window, 'scrollY', { configurable: true, value: 301 }); fireEvent.scroll(window) })
+    fireEvent.click(screen.getByRole('button', { name: 'Back to top' }))
+    expect(scroll).toHaveBeenCalledWith({ top: 0, behavior: 'instant' })
+    expect(screen.getByLabelText('Post title')).toHaveFocus()
+    scroll.mockRestore()
   })
 })
