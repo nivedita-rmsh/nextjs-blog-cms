@@ -82,17 +82,49 @@ function hasPlaceholderImage(value: unknown): boolean {
 const placeholderTitle = /^(?:hello this is for test|test(?: post| article)?|e2e(?: .*)?|untitled(?: post| article)?|sample(?: post| article)?|placeholder(?: .*)?)[.!]*$/i
 const filler = /hello this is for test|\blorem ipsum\b|\b(?:insert|add|write) (?:your )?(?:title|content|text|excerpt) here\b|\[(?:insert|add|your) [^\]]+\]/i
 
+function validatePublicationTitle(
+  title: string,
+  add: (field: string, message: string) => void
+): void {
+  if (
+    title.length < PUBLICATION_LIMITS.titleMin ||
+    title.length > PUBLICATION_LIMITS.titleMax
+  ) {
+    add('title', 'Use a descriptive title of 10–160 readable characters.')
+  }
+
+  if (placeholderTitle.test(title) || filler.test(title)) {
+    add(
+      'title',
+      'Replace the test or placeholder title with a meaningful engineering topic.'
+    )
+  }
+}
+
+function validatePublicationContent(
+  content: string,
+  add: (field: string, message: string) => void
+): void {
+  const words =
+    content.match(/[\p{L}\p{N}]+(?:['’_-][\p{L}\p{N}]+)*/gu)?.length ?? 0
+
+  if (words < PUBLICATION_LIMITS.bodyWords) {
+    add(
+      'content',
+      `Write at least 200 readable words; this article has ${words}. Include practical examples and useful takeaways.`
+    )
+  }
+}
+
 export function publicationErrors(input: PublicationInput, authorName: unknown, editorialReviewed: unknown): FieldErrors {
   const errors: FieldErrors = {}
   const add = (field: string, message: string) => { (errors[field] ??= []).push(message) }
   const title = readableText(input.title)
   const content = readableArticleText(input.content)
   const excerpt = readableText(input.excerpt)
-  if (title.length < PUBLICATION_LIMITS.titleMin || title.length > PUBLICATION_LIMITS.titleMax) add('title', 'Use a descriptive title of 10–160 readable characters.')
-  if (placeholderTitle.test(title) || filler.test(title)) add('title', 'Replace the test or placeholder title with a meaningful engineering topic.')
+  validatePublicationTitle(title, add)
   if (typeof input.slug !== 'string' || input.slug.length > 200 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.slug)) add('slug', 'Use a unique slug of up to 200 lowercase letters, numbers and hyphens.')
-  const words = content.match(/[\p{L}\p{N}]+(?:['’_-][\p{L}\p{N}]+)*/gu)?.length ?? 0
-  if (words < PUBLICATION_LIMITS.bodyWords) add('content', `Write at least 200 readable words; this article has ${words}. Include practical examples and useful takeaways.`)
+  validatePublicationContent(content, add)
   if (excerpt.length < PUBLICATION_LIMITS.excerptMin || excerpt.length > PUBLICATION_LIMITS.excerptMax) add('excerpt', 'Write an accurate excerpt of 40–500 readable characters.')
   for (const field of ['title', 'content', 'excerpt', 'seo_title', 'seo_description'] as const) {
     const text = field === 'content' ? content : readableText(input[field])
