@@ -11,6 +11,7 @@ import { CommentSection } from '@/features/comments/components/CommentSection'
 import { ShareButton } from '@/components/ShareButton'
 import { ChevronLeftIcon } from 'lucide-react'
 import { SubscribeForm } from '@/components/newsletter/SubscribeForm'
+import { RelatedPosts } from '@/features/posts/components/RelatedPosts'
 
 export const revalidate = 3600
 
@@ -121,6 +122,8 @@ export default async function PostPage({ params }: PostPageProps) {
         )}
 
         <SubscribeForm />
+
+        <RelatedPosts currentPost={post} />
 
         <CommentSection postId={post.id} postSlug={post.slug} />
       </article>
