@@ -7,6 +7,8 @@ vi.mock('@/app/(auth)/login/actions', () => ({ login: vi.fn() }))
 vi.mock('@/app/(auth)/register/actions', () => ({ register: vi.fn() }))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 import { startOAuth } from '@/app/auth/oauth/actions'
+import { login } from '@/app/(auth)/login/actions'
+import { register as registerAction } from '@/app/(auth)/register/actions'
 import LoginForm from '@/components/auth/LoginForm'
 import RegisterForm from '@/components/auth/RegisterForm'
 
@@ -40,5 +42,38 @@ describe.each([['login', LoginForm], ['registration', RegisterForm]] as const)('
     expect(screen.getByRole('alert')).toHaveTextContent('Sign-in was cancelled')
     fireEvent.click(screen.getByRole('button', { name: 'Continue with Google' }))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Provider unavailable'))
+  })
+})
+
+ describe.each([['login', LoginForm, login], ['registration', RegisterForm, registerAction]] as const)('%s navigation locks', (name, Form, action) => {
+  it('restores provider and email controls on a persisted pageshow', async () => {
+    vi.mocked(startOAuth).mockReturnValue(new Promise(() => {}))
+    render(<Form />)
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with Google' }))
+    fireEvent(window, new PageTransitionEvent('pageshow', { persisted: false }))
+    expect(screen.getByLabelText('Email address')).toBeDisabled()
+    fireEvent(window, new PageTransitionEvent('pageshow', { persisted: true }))
+    expect(screen.getByLabelText('Email address')).toBeEnabled()
+    expect(screen.getByRole('status')).toHaveTextContent('')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }))
+    expect(startOAuth).toHaveBeenCalledTimes(2)
+  })
+  it.each([true, false])('holds the submit lock only after successful navigation (%s)', async success => {
+    vi.mocked(action).mockResolvedValue(success ? { success: true } : { error: 'Try again' })
+    const { container } = render(<Form />)
+    fireEvent.change(screen.getByLabelText('Email address'), { target: { value: 'test@example.com' } })
+    fireEvent.change(screen.getByLabelText('Password', { exact: true }), { target: { value: 'ValidPassword123!' } })
+    if (name === 'registration') {
+      fireEvent.change(screen.getByLabelText('Full name'), { target: { value: 'Test User' } })
+      fireEvent.change(screen.getByLabelText('Confirm password', { exact: false }), { target: { value: 'ValidPassword123!' } })
+    }
+    fireEvent.submit(container.querySelector('form')!)
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByLabelText('Email address').hasAttribute('disabled')).toBe(success))
+    if (success) {
+      fireEvent.submit(container.querySelector('form')!)
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(action).toHaveBeenCalledTimes(1)
+    }
   })
 })

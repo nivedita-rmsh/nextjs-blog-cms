@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, Loader2, ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
 export default function MfaChallenge({ next }: { next: string }) {
+  const submitting = useRef(false)
   const [factorId, setFactorId] = useState<string | null>(null)
   const [challengeId, setChallengeId] = useState<string | null>(null)
   const [code, setCode] = useState('')
@@ -54,7 +55,8 @@ export default function MfaChallenge({ next }: { next: string }) {
   }, [])
 
   async function handleVerify() {
-    if (loading || !factorId || !challengeId || code.length !== 6) return
+    if (submitting.current || !factorId || !challengeId || code.length !== 6) return
+    submitting.current = true
     setLoading(true)
     setError(null)
 
@@ -62,15 +64,15 @@ export default function MfaChallenge({ next }: { next: string }) {
       const { error: verifyErr } = await supabase.auth.mfa.verify({ factorId, challengeId, code })
       if (verifyErr) {
         setError('Invalid code — please try again')
+      } else {
+        window.location.replace(next)
         return
       }
-
-      window.location.replace(next)
     } catch {
       setError('Unable to connect. Check your connection and try again.')
-    } finally {
-      setLoading(false)
     }
+    submitting.current = false
+    setLoading(false)
   }
 
   if (initializing) {

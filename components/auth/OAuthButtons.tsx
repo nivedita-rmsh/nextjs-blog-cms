@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { startOAuth } from '@/app/auth/oauth/actions'
@@ -29,6 +29,17 @@ export function OAuthButtons({ next, disabled, onPendingChange, onError }: {
 }) {
   const busy = useRef(false)
   const [provider, setProvider] = useState<OAuthProvider | null>(null)
+  useEffect(() => {
+    function restore(event: PageTransitionEvent) {
+      if (!event.persisted) return
+      busy.current = false
+      setProvider(null)
+      onPendingChange(false)
+    }
+    window.addEventListener('pageshow', restore)
+    return () => window.removeEventListener('pageshow', restore)
+  }, [onPendingChange])
+
   async function begin(selected: OAuthProvider) {
     if (disabled || busy.current) return
     busy.current = true

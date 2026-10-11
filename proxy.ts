@@ -69,9 +69,13 @@ export async function proxy(request: NextRequest) {
   if (pathname === '/mfa') {
     if (!user) return redirectWithCookies('/login')
 
-    // Already completed MFA — send to dashboard
-    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
-    if (aal?.currentLevel === 'aal2') return redirectWithCookies(safeReturnPath(request.nextUrl.searchParams.get('next')))
+    // Only leave the challenge when assurance is known and no step-up is needed.
+    const { data: aal, error: aalError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+    const enrolled = user.factors?.some(factor => factor.status === 'verified')
+    if (!aalError && aal?.currentLevel && aal.nextLevel &&
+      (aal.currentLevel === 'aal2' || (!enrolled && aal.nextLevel === 'aal1'))) {
+      return redirectWithCookies(safeReturnPath(request.nextUrl.searchParams.get('next')))
+    }
 
     return supabaseResponse
   }

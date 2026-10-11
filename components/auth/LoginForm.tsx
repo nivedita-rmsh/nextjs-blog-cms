@@ -47,13 +47,13 @@ export default function LoginForm({ next = '/dashboard', initialError = null }: 
         setLoading(false)
       } else if (result?.success) {
         router.push(next)
+        return
       }
     } catch {
       setError('Unable to connect. Check your connection and try again.')
-    } finally {
-      submitting.current = false
-      setLoading(false)
     }
+    submitting.current = false
+    setLoading(false)
   }
 
   return (

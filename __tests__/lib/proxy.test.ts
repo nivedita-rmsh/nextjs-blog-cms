@@ -111,3 +111,25 @@ it('preserves an internal destination through MFA and rejects an external one', 
   expect((await proxy(request('/mfa?next=%2Fdashboard%2Fposts'))).headers.get('location')).toBe('https://example.com/dashboard/posts')
   expect((await proxy(request('/mfa?next=https://evil.invalid'))).headers.get('location')).toBe('https://example.com/dashboard')
 })
+
+it('redirects users without verified factors away from MFA to a safe destination', async () => {
+  getUser.mockResolvedValue({ data: { user: { id: 'user', factors: [{ status: 'unverified' }] } } })
+  expect((await proxy(request('/mfa?next=%2Fdashboard%2Fposts'))).headers.get('location')).toBe('https://example.com/dashboard/posts')
+  expect((await proxy(request('/mfa?next=https://evil.invalid'))).headers.get('location')).toBe('https://example.com/dashboard')
+})
+
+it.each([
+  { data: null, error: null },
+  { data: { currentLevel: 'aal1', nextLevel: null }, error: null },
+  { data: { currentLevel: null, nextLevel: 'aal1' }, error: null },
+  { data: { currentLevel: 'aal2', nextLevel: 'aal2' }, error: { message: 'failed' } },
+  { data: { currentLevel: 'aal1', nextLevel: 'aal2' }, error: null },
+])('keeps MFA closed when assurance is missing, failed, or requires step-up', async aal => {
+  getAal.mockResolvedValue(aal)
+  expect((await proxy(request('/mfa'))).headers.get('location')).toBeNull()
+})
+
+it('keeps a verified factor challenge even when nextLevel is stale', async () => {
+  getUser.mockResolvedValue({ data: { user: { id: 'user', factors: [{ status: 'verified' }] } } })
+  expect((await proxy(request('/mfa'))).headers.get('location')).toBeNull()
+})
