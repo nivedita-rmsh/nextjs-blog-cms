@@ -1,3 +1,4 @@
+import { createClient } from '@/lib/supabase/server'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { requireAuth } from '@/lib/auth/session'
@@ -11,6 +12,9 @@ export const metadata: Metadata = { title: 'My Profile' }
 
 export default async function ProfilePage() {
   const profile = await requireAuth()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const useEmailRecovery = !!user?.identities?.some(identity => identity.provider === 'google' || identity.provider === 'github')
 
   return (
     <div className="p-8 animate-page">
@@ -34,7 +38,7 @@ export default async function ProfilePage() {
         {/* Side column */}
         <div className="space-y-6">
           <AvatarUpload profile={profile} />
-          <ChangePasswordForm />
+          <ChangePasswordForm useEmailRecovery={useEmailRecovery} />
           <TwoFactorSetup />
         </div>
       </div>

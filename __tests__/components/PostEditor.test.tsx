@@ -8,6 +8,9 @@ import { validPost } from '../helpers/publication'
 import type { PostWithRelations } from '@/features/posts/types'
 import { PostEditor } from '@/components/dashboard/PostEditor'
 
+// Server Actions are mocked in this component suite; Next enforces this boundary at build time.
+vi.mock('server-only', () => ({}))
+
 // ── Mock next/navigation ──────────────────────────────────────────────────────
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),

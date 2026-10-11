@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ verify: vi.fn(), exchange: vi.fn(), grant: vi.fn(), clear: vi.fn() }))
+vi.mock('@/app/auth/oauth/callback', () => ({ completeOAuth: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({ auth: { verifyOtp: mocks.verify, exchangeCodeForSession: mocks.exchange } }) }))
 vi.mock('@/lib/auth/recovery', () => ({ createRecoveryGrant: mocks.grant, clearRecoveryGrant: mocks.clear }))
 import { GET } from '@/app/auth/callback/route'

@@ -17,6 +17,7 @@ describe('POST /api/auth/signout', () => {
     const res = await POST()
 
     expect(mockSignOut).toHaveBeenCalledOnce()
+    expect(mockSignOut).toHaveBeenCalledWith({ scope: 'global' })
     expect(res.status).toBe(204)
   })
 

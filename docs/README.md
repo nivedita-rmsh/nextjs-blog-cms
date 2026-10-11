@@ -7,6 +7,7 @@
 - [Local development and environment variables](setup/local-development.md)
 - [Database initialization and migration prerequisites](setup/migrations.md)
 - [Deployment configuration](setup/deployment.md)
+- [Google and GitHub authentication](setup/social-auth.md)
 - [Supabase confirmation webhooks](setup/webhooks.md)
 
 ## Development
