@@ -30,6 +30,7 @@ function buildPostPayload(body: PostApiBody, slug: string, categoryId: string | 
     seo_title: typeof body.meta_title === 'string' ? body.meta_title : (body.title ?? '').trim(),
     seo_description: seoDescription,
     published_at: postStatus === 'published' ? new Date().toISOString() : null,
+    moderation_status: postStatus === 'published' ? 'pending' : 'not_submitted',
   }
 }
 
@@ -61,6 +62,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: 'Invalid post fields', details: { field_errors: parsed.error.flatten().fieldErrors } }, { status: 422 })
   }
   const body = parsed.data
+  const requestedPublication = body.status === 'published'
   const identity = creationIdentity('rest', body, request.headers.get('Idempotency-Key'))
   const previous = await findCreatedPost(userId, identity)
   if (previous.error) return NextResponse.json({ success: false, error: previous.error }, { status: previous.status })
@@ -77,6 +79,10 @@ export async function POST(request: Request) {
       if (committed.post) return NextResponse.json({ success: true, data: { post: committed.post } }, { status: 201, headers: { 'Idempotent-Replayed': 'true' } })
       return NextResponse.json({ success: false, error: 'Publication blocked', details: { field_errors: fieldErrors } }, { status: 422 })
     }
+  }
+  if (requestedPublication) {
+    payload.status = 'draft'
+    payload.published_at = null
   }
   payload.category_id = body.category ? await resolveCategoryId(body.category, supabase) : null
 
@@ -107,5 +113,8 @@ export async function POST(request: Request) {
   }
   if (post?.status === 'published') refreshPostPaths(post.slug)
   else refreshDraftPaths()
-  return NextResponse.json({ success: true, data: { post }, ...(newsletterWarning ? { newsletter_warning: newsletterWarning } : {}) }, { status: 201, ...(replayed ? { headers: { 'Idempotent-Replayed': 'true' } } : {}) })
+  const moderationWarning = requestedPublication && post?.moderation_status === 'pending'
+    ? 'The post was saved as a draft and submitted for administrator moderation; it is not public yet.'
+    : undefined
+  return NextResponse.json({ success: true, data: { post }, ...(newsletterWarning ? { newsletter_warning: newsletterWarning } : {}), ...(moderationWarning ? { moderation_warning: moderationWarning } : {}) }, { status: 201, ...(replayed ? { headers: { 'Idempotent-Replayed': 'true' } } : {}) })
 }

@@ -56,6 +56,7 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
       tags:post_tags(tag:tags(id, name, slug))
     `)
     .eq('status', 'published')
+    .eq('moderation_status', 'approved')
     .eq('category_id', category.id)
     .order('published_at', { ascending: false })
 

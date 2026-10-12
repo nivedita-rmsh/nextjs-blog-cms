@@ -15,7 +15,8 @@ export function rankRelatedPosts(
     .filter(
       (candidate) =>
         candidate.id !== currentPost.id &&
-        candidate.status === 'published',
+        candidate.status === 'published' &&
+        candidate.moderation_status === 'approved',
     )
     .map((candidate) => {
       const sharedTags = candidate.tags.filter((tag) =>
