@@ -130,7 +130,7 @@ begin
     if v_post.is_premium then v_post.content := null; else v_post.content := v_full_content; end if;
     update public.posts set title=v_post.title, slug=v_post.slug, excerpt=v_post.excerpt, content=v_post.content,
       cover_image=v_post.cover_image, cover_image_alt=v_post.cover_image_alt, status=v_post.status, is_premium=v_post.is_premium, category_id=v_post.category_id,
-      seo_description=v_post.seo_description, published_at=v_post.published_at, moderation_status=v_post.moderation_status,
+      seo_title=v_post.seo_title, seo_description=v_post.seo_description, published_at=v_post.published_at, moderation_status=v_post.moderation_status,
       updated_at=clock_timestamp()
     where id=p_post_id returning * into v_post;
     if v_post.is_premium then
