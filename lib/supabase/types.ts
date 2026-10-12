@@ -249,6 +249,30 @@ export type Database = {
           },
         ]
       }
+      premium_post_contents: {
+        Row: { content: string; post_id: string; updated_at: string }
+        Insert: { content: string; post_id: string; updated_at?: string }
+        Update: { content?: string; post_id?: string; updated_at?: string }
+        Relationships: [{
+          foreignKeyName: "premium_post_contents_post_id_fkey"
+          columns: ["post_id"]
+          isOneToOne: true
+          referencedRelation: "posts"
+          referencedColumns: ["id"]
+        }]
+      }
+      premium_subscriptions: {
+        Row: { created_at: string; expires_at: string | null; status: string; updated_at: string; user_id: string }
+        Insert: { created_at?: string; expires_at?: string | null; status?: string; updated_at?: string; user_id: string }
+        Update: { created_at?: string; expires_at?: string | null; status?: string; updated_at?: string; user_id?: string }
+        Relationships: [{
+          foreignKeyName: "premium_subscriptions_user_id_fkey"
+          columns: ["user_id"]
+          isOneToOne: true
+          referencedRelation: "profiles"
+          referencedColumns: ["id"]
+        }]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
