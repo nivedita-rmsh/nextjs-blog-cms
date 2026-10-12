@@ -34,6 +34,8 @@ declare
   v_role text; v_ids uuid[] := p_tag_ids; v_tag jsonb; v_tag_id uuid; v_id uuid;
   v_content_changed boolean := false;
 begin
+  -- Serialize alias resolution with tag merges before touching post relationships.
+  lock table public.tags in row exclusive mode;
   select role into v_role from public.profiles where id = p_actor_id;
   if v_role is null or v_role not in ('admin', 'author') then raise insufficient_privilege using message = 'Unauthorized'; end if;
   if p_chat_id is not null and not exists (select 1 from public.ai_chats where id = p_chat_id and user_id = p_actor_id) then
@@ -56,8 +58,8 @@ begin
     else
       v_post.moderation_status := coalesce(v_post.moderation_status, 'not_submitted');
     end if;
-    insert into public.posts (id,title,slug,excerpt,content,cover_image,status,author_id,category_id,seo_title,seo_description,published_at,moderation_status)
-    values (v_id,v_post.title,v_post.slug,v_post.excerpt,v_post.content,v_post.cover_image,coalesce(v_post.status,'draft'),p_actor_id,
+    insert into public.posts (id,title,slug,excerpt,content,cover_image,cover_image_alt,status,author_id,category_id,seo_title,seo_description,published_at,moderation_status)
+    values (v_id,v_post.title,v_post.slug,v_post.excerpt,v_post.content,v_post.cover_image,coalesce(v_post.cover_image_alt,''),coalesce(v_post.status,'draft'),p_actor_id,
       v_post.category_id,v_post.seo_title,v_post.seo_description,v_post.published_at,coalesce(v_post.moderation_status,'not_submitted'))
     returning * into v_post;
   else
@@ -82,7 +84,7 @@ begin
     end if;
     v_post.moderation_status := coalesce(v_post.moderation_status,'not_submitted');
     update public.posts set title=v_post.title, slug=v_post.slug, excerpt=v_post.excerpt, content=v_post.content,
-      cover_image=v_post.cover_image, status=v_post.status, category_id=v_post.category_id, seo_title=v_post.seo_title,
+      cover_image=v_post.cover_image, cover_image_alt=v_post.cover_image_alt, status=v_post.status, category_id=v_post.category_id, seo_title=v_post.seo_title,
       seo_description=v_post.seo_description, published_at=v_post.published_at, moderation_status=v_post.moderation_status,
       updated_at=clock_timestamp()
     where id=p_post_id returning * into v_post;
@@ -97,7 +99,11 @@ begin
   end if;
   if v_ids is not null then
     delete from public.post_tags where post_id=v_post.id;
-    insert into public.post_tags(post_id,tag_id) select v_post.id,tag_id from (select distinct unnest(v_ids) tag_id) tags;
+    insert into public.post_tags(post_id,tag_id)
+    select v_post.id, tag_id from (
+      select distinct coalesce(t.merged_into, ids.id) as tag_id
+      from unnest(v_ids) ids(id) left join public.tags t on t.id = ids.id
+    ) tags;
   end if;
   if p_chat_id is not null then insert into public.ai_generated_posts(chat_id,post_id) values(p_chat_id,v_post.id); end if;
   if p_request_key is not null and p_expected_status is null then
