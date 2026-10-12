@@ -43,15 +43,14 @@ describe('dashboard publication actions', () => {
   it.each([false, true])('reports an already published recovery document before slug validation (auto slug: %s)', async auto_slug => {
     const db = useDb([])
     const documentId = '00000000-0000-4000-8000-000000000004'
-    expect((await createPost({ ...values, auto_slug }, 'user-1', documentId, true)).data?.status).toBe('published')
+    expect((await createPost({ ...values, auto_slug }, 'user-1', documentId, true)).data).toMatchObject({ status: 'draft', moderation_status: 'pending' })
     const writes = db.writes.length
     const retry = await createPost({ ...values, auto_slug, content: 'Newer unsaved writing' }, 'user-1', documentId, true)
-    expect(retry.error).toContain('already published')
-    expect(retry.error).toContain('newsletter status')
+    expect(retry.error).toContain('already created')
     expect(retry.fieldErrors).toBeUndefined()
     expect(db.writes).toHaveLength(writes)
     expect(db.posts[0].content).toBe(values.content)
-    expect(scheduleNewsletterSend).toHaveBeenCalledOnce()
+    expect(scheduleNewsletterSend).not.toHaveBeenCalled()
   })
   it('creates incomplete drafts', async () => {
     const db = useDb([])
@@ -86,13 +85,15 @@ describe('dashboard publication actions', () => {
     expect((await publishPost('post-1', { ...values, editorial_reviewed: false })).fieldErrors).toHaveProperty('editorial_reviewed')
     expect(db.writes).toEqual([])
   })
-  it('saves and publishes valid input with one post write', async () => {
+  it('queues valid publish requests for administrator moderation', async () => {
     const db = useDb()
-    expect((await publishPost('post-1', values)).error).toBeUndefined()
-    expect(db.posts[0]).toMatchObject({ status: 'published', content: values.content })
+    const result = await publishPost('post-1', values)
+    expect(result.error).toBeUndefined()
+    expect(db.posts[0]).toMatchObject({ status: 'draft', moderation_status: 'pending', content: values.content })
     expect(db.writes.filter(write => write.table === 'posts')).toHaveLength(1)
-    expect(scheduleNewsletterSend).toHaveBeenCalledExactlyOnceWith('post-1', { resetPendingDelay: true })
-    expect(refreshPostPaths).toHaveBeenCalledWith(validPost.slug, values.slug)
+    expect(scheduleNewsletterSend).not.toHaveBeenCalled()
+    expect(result.moderationWarning).toContain('administrator moderation')
+    expect(refreshDraftPaths).toHaveBeenCalledOnce()
   })
   it('rejects concurrent edits without newsletter side effects', async () => {
     const db = useDb(); db.simulateRace()
@@ -116,13 +117,14 @@ describe('dashboard publication actions', () => {
     expect(db.posts[0].status).toBe('draft')
     expect(cancelNewsletterSend).toHaveBeenCalledWith('post-1')
   })
-  it('reports publish success separately from a scheduling failure', async () => {
+  it('does not queue newsletter delivery before moderator approval', async () => {
     const db = useDb()
     vi.mocked(scheduleNewsletterSend).mockRejectedValueOnce(new Error('Database unavailable'))
     const result = await publishPost('post-1', values)
     expect(result.error).toBeUndefined()
-    expect(result.newsletterWarning).toContain('Post published')
-    expect(db.posts[0].status).toBe('published')
+    expect(result.moderationWarning).toContain('administrator moderation')
+    expect(db.posts[0]).toMatchObject({ status: 'draft', moderation_status: 'pending' })
+    expect(scheduleNewsletterSend).not.toHaveBeenCalled()
   })
   it('reports unpublish success even when queue cancellation fails', async () => {
     const db = useDb([{ ...validPost, status: 'published' }])
