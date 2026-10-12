@@ -25,6 +25,7 @@ export async function getPublishedPosts(page = 1, limit = 10) {
     .from('posts')
     .select(POST_SELECT, { count: 'exact' })
     .eq('status', 'published')
+    .eq('moderation_status', 'approved')
     .order('published_at', { ascending: false })
     .range(from, to)
 
@@ -42,6 +43,7 @@ export async function getPostBySlug(slug: string) {
     .select(POST_SELECT)
     .eq('slug', slug)
     .eq('status', 'published')
+    .eq('moderation_status', 'approved')
     .single()
 
   if (error) return null
@@ -85,6 +87,7 @@ export async function getPostsByCategory(categorySlug: string, page = 1, limit =
     .from('posts')
     .select(POST_SELECT, { count: 'exact' })
     .eq('status', 'published')
+    .eq('moderation_status', 'approved')
     .eq('category.slug', categorySlug)
     .order('published_at', { ascending: false })
     .range(from, to)
@@ -105,6 +108,7 @@ export async function getAllPublishedSlugs() {
     .from('posts')
     .select('slug')
     .eq('status', 'published')
+    .eq('moderation_status', 'approved')
 
   return ((data ?? []) as { slug: string }[]).map((p) => p.slug)
 }
@@ -134,6 +138,7 @@ export async function getPostRedirect(slug: string): Promise<string | null> {
     .select('post_id').eq('slug', slug).eq('was_published', true).maybeSingle()
   if (error || !route) return null
   const { data: post } = await supabase.from('posts').select('slug')
-    .eq('id', route.post_id).eq('status', 'published').maybeSingle()
+    .eq('id', route.post_id).eq('status', 'published')
+    .eq('moderation_status', 'approved').maybeSingle()
   return post && post.slug !== slug ? post.slug : null
 }

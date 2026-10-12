@@ -185,6 +185,7 @@ export type Database = {
           excerpt: string | null
           id: string
           published_at: string | null
+          moderation_status: string
           seo_description: string | null
           seo_title: string | null
           slug: string
@@ -202,6 +203,7 @@ export type Database = {
           excerpt?: string | null
           id?: string
           published_at?: string | null
+          moderation_status?: string
           seo_description?: string | null
           seo_title?: string | null
           slug: string
@@ -219,6 +221,7 @@ export type Database = {
           excerpt?: string | null
           id?: string
           published_at?: string | null
+          moderation_status?: string
           seo_description?: string | null
           seo_title?: string | null
           slug?: string
