@@ -15,7 +15,12 @@ export async function approvePostForPublication(id: string): Promise<ModerationA
   const supabase = createServiceClient()
   const { data: post, error } = await supabase.from('posts').select('*').eq('id', id).eq('moderation_status', 'pending').single()
   if (error || !post) return { error: 'This article is no longer waiting for moderation. Refresh the queue.' }
-  const fieldErrors = await validatePublication(supabase, post, true, id)
+  let validationPost = post
+  if (post.is_premium) {
+    const { data: premiumBody } = await supabase.from('premium_post_contents').select('content').eq('post_id', id).maybeSingle()
+    validationPost = { ...post, content: premiumBody?.content ?? null }
+  }
+  const fieldErrors = await validatePublication(supabase, validationPost, true, id)
   if (Object.keys(fieldErrors).length) return { error: 'Approval blocked. The article no longer meets publication requirements.', fieldErrors }
   const now = new Date().toISOString()
   const { data: approved, error: updateError } = await supabase.from('posts')

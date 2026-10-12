@@ -15,7 +15,7 @@ import {
 
 const POST_FULL_SELECT = `
   id, title, slug, content, excerpt, seo_title, seo_description,
-  status, cover_image, cover_image_alt, author_id, created_at, updated_at, published_at,
+  status, cover_image, cover_image_alt, author_id, created_at, updated_at, published_at, is_premium,
   category:categories(name),
   tags:post_tags(tag:tags(name))
 `
@@ -29,6 +29,7 @@ type RawPostFull = {
   seo_title: string | null
   seo_description: string | null
   status: string
+  is_premium: boolean
   cover_image_alt: string
   cover_image: string | null
   author_id: string | null
@@ -49,6 +50,7 @@ function normalizeFullPost(raw: RawPostFull) {
     meta_title: raw.seo_title,
     meta_description: raw.seo_description,
     status: raw.status,
+    is_premium: raw.is_premium,
     category: raw.category?.name ?? null,
     tags: (raw.tags ?? []).map((pt) => pt.tag?.name).filter(Boolean) as string[],
     image_url: raw.cover_image,
@@ -88,8 +90,12 @@ export async function GET(
     .single()
 
   if (error || !data) return apiError('Post not found.', 404)
-
-  return apiSuccess({ data: normalizeFullPost(data as unknown as RawPostFull) })
+  let post = data as unknown as RawPostFull
+  if (post.is_premium) {
+    const { data: premiumBody } = await supabase.from('premium_post_contents').select('content').eq('post_id', post.id).maybeSingle()
+    post = { ...post, content: premiumBody?.content ?? null }
+  }
+  return apiSuccess({ data: normalizeFullPost(post) })
 }
 
 export async function PATCH(
@@ -114,6 +120,10 @@ export async function PATCH(
     .single()
 
   if (fetchError || !existing) return apiError('Post not found.', 404)
+  if (existing.is_premium) {
+    const { data: premiumBody } = await supabase.from('premium_post_contents').select('content').eq('post_id', id).maybeSingle()
+    existing.content = premiumBody?.content ?? null
+  }
 
   let rawBody: unknown
   try {
@@ -225,10 +235,15 @@ export async function PATCH(
   if (existing.status === 'published' || updated.status === 'published') refreshPostPaths(existing.slug, updated.slug)
   else refreshDraftPaths()
   const { data: fullPost } = await supabase.from('posts').select(POST_FULL_SELECT).eq('id', id).single()
+  let responsePost = (fullPost ?? updated) as unknown as RawPostFull
+  if (responsePost.is_premium) {
+    const { data: premiumBody } = await supabase.from('premium_post_contents').select('content').eq('post_id', id).maybeSingle()
+    responsePost = { ...responsePost, content: premiumBody?.content ?? null }
+  }
   const moderationWarning = updated.moderation_status === 'pending'
     ? 'The updated article is a draft awaiting administrator moderation before it can be public again.'
     : undefined
-  return apiSuccess({ data: normalizeFullPost((fullPost ?? updated) as unknown as RawPostFull), ...(newsletterWarning ? { newsletter_warning: newsletterWarning } : {}), ...(moderationWarning ? { moderation_warning: moderationWarning } : {}) })
+  return apiSuccess({ data: normalizeFullPost(responsePost), ...(newsletterWarning ? { newsletter_warning: newsletterWarning } : {}), ...(moderationWarning ? { moderation_warning: moderationWarning } : {}) })
 }
 
 export async function DELETE(

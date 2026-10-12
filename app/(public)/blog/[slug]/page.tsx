@@ -12,8 +12,10 @@ import { ShareButton } from '@/components/ShareButton'
 import { ChevronLeftIcon } from 'lucide-react'
 import { SubscribeForm } from '@/components/newsletter/SubscribeForm'
 import { RelatedPosts } from '@/features/posts/components/RelatedPosts'
+import { getProfile } from '@/lib/auth/session'
+import { getPremiumPostBody } from '@/features/premium/access'
 
-export const revalidate = 3600
+export const revalidate = 0
 
 interface PostPageProps {
   params: Promise<{ slug: string }>
@@ -51,6 +53,11 @@ export default async function PostPage({ params }: PostPageProps) {
     if (currentSlug) permanentRedirect(`/blog/${currentSlug}`)
     notFound()
   }
+
+  const profile = await getProfile()
+  const premiumBody = post.is_premium ? await getPremiumPostBody(post.id, profile?.id, post.author_id) : null
+  const canReadArticle = !post.is_premium || premiumBody !== null
+  const articleContent = post.is_premium ? premiumBody : post.content
 
   const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000').replace(/\/+$/, '')
 
@@ -109,7 +116,17 @@ export default async function PostPage({ params }: PostPageProps) {
           </div>
         </div>
 
-        <PostBody title={post.title} coverImage={post.cover_image} coverImageAlt={post.cover_image_alt} excerpt={post.excerpt} content={post.content ?? ''} />
+        {canReadArticle ? (
+          <PostBody title={post.title} coverImage={post.cover_image} coverImageAlt={post.cover_image_alt} excerpt={post.excerpt} content={articleContent ?? ''} />
+        ) : (
+          <section className="rounded-2xl border p-6 md:p-8 space-y-4" aria-labelledby="premium-access-title">
+            <Badge variant="secondary">Premium article</Badge>
+            <h2 id="premium-access-title" className="text-2xl font-semibold">Premium access required</h2>
+            <p className="text-muted-foreground">{post.excerpt || 'This article is available to readers with an active premium entitlement.'}</p>
+            <p className="text-sm text-muted-foreground">Sign in with an active premium entitlement to read the complete article. This demo checks an entitlement record; it does not process payments.</p>
+            <Link className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-primary-foreground" href={`/login?next=${encodeURIComponent(`/blog/${post.slug}`)}`}>Sign in to check access</Link>
+          </section>
+        )}
 
         {post.tags && post.tags.length > 0 && (
           <div className="mt-12 flex flex-wrap gap-2">
