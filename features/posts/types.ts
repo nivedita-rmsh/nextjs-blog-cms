@@ -1,6 +1,6 @@
 import type { Post, Profile, Category, Tag } from '@/lib/supabase/types'
 
-export type PostWithRelations = Omit<Post, 'is_premium'> & { is_premium?: boolean
+export type PostWithRelations = Omit<Post, 'is_premium'> & { is_premium?: boolean;
   author: Pick<Profile, 'id' | 'full_name' | 'avatar_url'> | null
   category: Pick<Category, 'id' | 'name' | 'slug'> | null
   tags: Tag[]
