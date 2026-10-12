@@ -10,6 +10,7 @@ export type PostFormValues = {
   auto_slug?: boolean
   confirm_slug_change?: boolean
   editorial_reviewed?: boolean
+  is_premium?: boolean
   title: string
   slug: string
   excerpt: string

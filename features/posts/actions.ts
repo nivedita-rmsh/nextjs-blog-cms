@@ -61,6 +61,7 @@ export async function createPost(values: PostFormValues, editorId?: string, docu
         seo_title: values.seo_title || null,
         seo_description: values.seo_description || null,
         author_id: profile.id,
+        is_premium: values.is_premium ?? false,
         ...moderationMutation({ currentStatus: null, currentModerationStatus: null, requestPublish: publish }),
       },
     })
@@ -130,6 +131,7 @@ export async function updatePost(id: string, values: PostFormValues, publish = f
       content: values.content || null,
       cover_image: values.cover_image || null,
       cover_image_alt: values.cover_image_alt?.trim().slice(0, 1000) ?? '',
+      is_premium: values.is_premium ?? false,
       category_id: values.category_id || null,
       seo_title: values.seo_title || null,
       seo_description: values.seo_description || null,

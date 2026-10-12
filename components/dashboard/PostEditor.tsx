@@ -35,6 +35,7 @@ import { PostNewsletter } from './PostNewsletter'
 const postSchema = z.object({
   title: z.string(),
   editorial_reviewed: z.boolean(),
+  is_premium: z.boolean(),
   slug: z.string(),
   excerpt: z.string(),
   content: z.string(),
@@ -118,6 +119,7 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
       shouldFocusError: false,
       defaultValues: {
         editorial_reviewed: false,
+        is_premium: post?.is_premium ?? false,
         title: post?.title ?? '',
         slug: post?.slug ?? '',
         excerpt: post?.excerpt ?? '',
@@ -475,6 +477,13 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
               </label>
             )}
             <FieldError name="slug" errors={fieldErrors} />
+
+            <div className="rounded-lg border border-border/70 p-3 space-y-2">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input type="checkbox" {...register('is_premium')} /> Premium article
+              </label>
+              <p className="text-xs text-muted-foreground">The full article body is stored separately. Readers need an active premium entitlement; the excerpt remains visible as a preview.</p>
+            </div>
 
             {/* Excerpt */}
             <div className="space-y-1.5">

@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import type { PostWithRelations } from './types'
+import { getProfile } from '@/lib/auth/session'
+import { getPremiumPostBody } from '@/features/premium/access'
 
 export const POST_SELECT = `
   *,
@@ -75,7 +77,11 @@ export async function getPostById(id: string) {
     .single()
 
   if (error) return null
-  return normalizePost(data as PostWithRelations)
+  const post = normalizePost(data as PostWithRelations)
+  if (!post.is_premium) return post
+  const profile = await getProfile()
+  const content = await getPremiumPostBody(post.id, profile?.id, post.author_id)
+  return { ...post, content }
 }
 
 export async function getPostsByCategory(categorySlug: string, page = 1, limit = 10) {
