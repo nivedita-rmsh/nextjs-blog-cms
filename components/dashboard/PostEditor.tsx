@@ -225,12 +225,13 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
         if (createdPost || !post) {
           setCreatedPost({ ...result.data, author: post?.author ?? null, category: categories.find(category => category.id === values.category_id) ?? null, tags: tags.filter(tag => values.tag_ids.includes(tag.id)) })
         } else router.refresh()
-        const savedMessage = isPublished ? 'Published changes saved' : 'Post saved as draft'
-        const message = publish ? 'Post saved and published!' : savedMessage
+        const savedMessage = result.data.moderation_status === 'pending' ? 'Submitted for moderation' : isPublished ? 'Published changes saved' : 'Post saved as draft'
+        const message = publish && result.data.moderation_status === 'pending' ? 'Submitted for administrator moderation' : publish ? 'Post saved and published!' : savedMessage
         toast.success(message)
         if (result.newsletterState) setSavedNewsletter(result.newsletterState)
         setNewsletterWarning(result.newsletterWarning ?? null)
         if (result.newsletterWarning) toast.warning(result.newsletterWarning)
+        if (result.moderationWarning) toast.warning(result.moderationWarning)
         setReviewOpen(false)
       }
     } catch {
@@ -268,11 +269,12 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
         }
         if (createdPost) setCreatedPost({ ...createdPost, ...result.data })
         setReviewOpen(false)
-        const message = isPublished ? 'Post unpublished' : 'Post saved and published!'
+        const message = isPublished ? 'Post unpublished' : result.data.moderation_status === 'pending' ? 'Submitted for administrator moderation' : result.data.status === 'published' ? 'Post saved and published!' : 'Post saved as draft'
         toast.success(message)
         if (result.newsletterState) setSavedNewsletter(result.newsletterState)
         setNewsletterWarning(result.newsletterWarning ?? null)
         if (result.newsletterWarning) toast.warning(result.newsletterWarning)
+        if (result.moderationWarning) toast.warning(result.moderationWarning)
         router.refresh()
       }
     } catch {
