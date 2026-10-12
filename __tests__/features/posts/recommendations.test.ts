@@ -22,6 +22,8 @@ function makePost(
     cover_image: null,
     cover_image_alt: '',
     status: options.status ?? 'published',
+    moderation_status: options.status === 'draft' ? 'not_submitted' : 'approved',
+    is_premium: false,
     published_at: options.publishedAt ?? '2026-01-01T00:00:00Z',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',

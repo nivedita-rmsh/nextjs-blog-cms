@@ -206,7 +206,6 @@ export type Database = {
           published_at?: string | null
           moderation_status?: string
           is_premium?: boolean
-          is_premium?: boolean
           seo_description?: string | null
           seo_title?: string | null
           slug: string
@@ -225,6 +224,7 @@ export type Database = {
           id?: string
           published_at?: string | null
           moderation_status?: string
+          is_premium?: boolean
           seo_description?: string | null
           seo_title?: string | null
           slug?: string
