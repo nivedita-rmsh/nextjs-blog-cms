@@ -5,7 +5,7 @@ import type { PostWithRelations } from '../types'
 export const draftValuesSchema = z.object({
   title: z.string(), slug: z.string(), excerpt: z.string(), content: z.string(),
   cover_image_alt: z.string().optional(), cover_image: z.string(), category_id: z.string(), seo_title: z.string(),
-  seo_description: z.string(), tag_ids: z.array(z.string()),
+  seo_description: z.string(), is_premium: z.boolean().default(false), tag_ids: z.array(z.string()),
 })
 export type DraftValues = z.infer<typeof draftValuesSchema>
 export type WorkingCopy = {
@@ -21,6 +21,7 @@ export function draftValues(post?: PostWithRelations): DraftValues {
     title: post?.title ?? '', slug: post?.slug ?? '', excerpt: post?.excerpt ?? '',
     content: post?.content ?? '', cover_image_alt: post?.cover_image_alt ?? '', cover_image: post?.cover_image ?? '', category_id: post?.category_id ?? '',
     seo_title: post?.seo_title ?? '', seo_description: post?.seo_description ?? '',
+    is_premium: post?.is_premium ?? false,
     tag_ids: post?.tags?.map(tag => tag.id) ?? [],
   }
 }

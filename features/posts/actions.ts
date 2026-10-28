@@ -15,8 +15,9 @@ import { getProfile } from '@/lib/auth/session'
 import type { PostFormValues, Post } from './types'
 import type { PostNewsletterState } from '@/features/newsletter/types'
 import { getPostNewsletterState } from '@/features/newsletter/queries'
+import { moderationMutation } from './moderation'
 
-type PostMutationResult = { data?: Post; error?: string; fieldErrors?: FieldErrors; newsletterWarning?: string; newsletterState?: PostNewsletterState }
+type PostMutationResult = { data?: Post; error?: string; fieldErrors?: FieldErrors; newsletterWarning?: string; moderationWarning?: string; newsletterState?: PostNewsletterState }
 
 export async function createPost(values: PostFormValues, editorId?: string, documentId?: string, publish = false): Promise<PostMutationResult> {
   const profile = await getProfile()
@@ -60,8 +61,8 @@ export async function createPost(values: PostFormValues, editorId?: string, docu
         seo_title: values.seo_title || null,
         seo_description: values.seo_description || null,
         author_id: profile.id,
-        status: publish ? 'published' : 'draft',
-        ...(publish ? { published_at: new Date().toISOString() } : {}),
+        is_premium: values.is_premium ?? false,
+        ...moderationMutation({ currentStatus: null, currentModerationStatus: null, requestPublish: publish }),
       },
     })
     return { data: data?.post ?? null, error }
@@ -80,14 +81,20 @@ export async function createPost(values: PostFormValues, editorId?: string, docu
   if (!post) return { error: 'The post could not be saved. Try again.' }
 
   let newsletterWarning: string | undefined
-  if (publish) {
+  let moderationWarning: string | undefined
+  if (post.status === 'published') {
     try { await scheduleNewsletterSend(post.id, { resetPendingDelay: true }) } catch (err) {
       console.error('[createPost] Newsletter scheduling failed:', err)
       newsletterWarning = 'Post published, but newsletter scheduling could not be confirmed. Check newsletter status before retrying.'
     }
     refreshPostPaths(post.slug, post.slug)
-  } else refreshDraftPaths()
-  return { data: post, newsletterState: await getPostNewsletterState(post.id), ...(newsletterWarning ? { newsletterWarning } : {}) }
+  } else {
+    refreshDraftPaths()
+    if (publish && post.moderation_status === 'pending') {
+      moderationWarning = 'Your article was saved as a draft and submitted for administrator moderation. It will be published after approval.'
+    }
+  }
+  return { data: post, newsletterState: await getPostNewsletterState(post.id), ...(newsletterWarning ? { newsletterWarning } : {}), ...(moderationWarning ? { moderationWarning } : {}) }
 }
 
 export async function updatePost(id: string, values: PostFormValues, publish = false, expectedUpdatedAt?: string | null, editorId?: string): Promise<PostMutationResult> {
@@ -95,7 +102,7 @@ export async function updatePost(id: string, values: PostFormValues, publish = f
   if (!profile) return { error: 'Unauthorized' }
   if (editorId !== undefined && profile.id !== editorId) return { error: 'The signed-in account changed. Sign in with the account that opened this editor; your input is preserved.' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   const { data: existing, error: fetchError } = await supabase.from('posts').select('*').eq('id', id).single()
   if (fetchError || !existing) return { error: 'Post not found' }
@@ -117,13 +124,14 @@ export async function updatePost(id: string, values: PostFormValues, publish = f
   const { data: saved, error } = await savePostAtomic({ actorId: profile.id, postId: id,
     expectedUpdatedAt: existing.updated_at, expectedStatus: existing.status, allowAdmin: true,
     tagIds: values.tag_ids ?? [], payload: {
-      ...(publish ? { status: 'published', published_at: existing.published_at || new Date().toISOString() } : {}),
+      ...moderationMutation({ currentStatus: existing.status, currentModerationStatus: existing.moderation_status, requestPublish: publish }),
       title: values.title,
       slug,
       excerpt: values.excerpt || null,
       content: values.content || null,
       cover_image: values.cover_image || null,
       cover_image_alt: values.cover_image_alt?.trim().slice(0, 1000) ?? '',
+      is_premium: values.is_premium ?? false,
       category_id: values.category_id || null,
       seo_title: values.seo_title || null,
       seo_description: values.seo_description || null,
@@ -135,15 +143,22 @@ export async function updatePost(id: string, values: PostFormValues, publish = f
   if (error || !post) return { error: error?.code === '40001' ? 'The post changed. Your input is preserved; reload before trying again.' : 'The post and tags could not be saved. No changes were applied. Try again.' }
 
   let newsletterWarning: string | undefined
-  if (publish && existing.status !== 'published') {
+  let moderationWarning: string | undefined
+  if (existing.status === 'published' && post.status !== 'published') {
+    try { await cancelNewsletterSend(id) } catch (err) {
+      console.error('[updatePost] Newsletter cancellation failed:', err)
+      newsletterWarning = 'The article was removed from public circulation for moderation, but newsletter cancellation could not be confirmed. Check newsletter status.'
+    }
+  } else if (post.status === 'published' && publish && existing.status !== 'published') {
     try { await scheduleNewsletterSend(id, { resetPendingDelay: true }) } catch (err) {
       console.error('[updatePost] Newsletter scheduling failed:', err)
       newsletterWarning = 'Post published, but newsletter scheduling could not be confirmed. Check the newsletter status and retry scheduling if available.'
     }
   }
-  if (targetPublished) refreshPostPaths(existing.slug, slug)
+  if (existing.status === 'published' || post.status === 'published') refreshPostPaths(existing.slug, slug)
   else refreshDraftPaths()
-  return { data: post, newsletterState: await getPostNewsletterState(post.id), ...(newsletterWarning ? { newsletterWarning } : {}) }
+  if (post.moderation_status === 'pending') moderationWarning = 'Your changes were saved as a draft and are awaiting administrator moderation before publication.'
+  return { data: post, newsletterState: await getPostNewsletterState(post.id), ...(newsletterWarning ? { newsletterWarning } : {}), ...(moderationWarning ? { moderationWarning } : {}) }
 }
 
 export async function publishPost(id: string, values: PostFormValues, expectedUpdatedAt?: string | null, editorId?: string) {
@@ -162,7 +177,7 @@ export async function unpublishPost(id: string, editorId?: string): Promise<Post
   const supabase = await createClient()
   const { data: post, error } = await supabase
     .from('posts')
-    .update({ status: 'draft', published_at: null })
+    .update({ status: 'draft', published_at: null, moderation_status: 'not_submitted' })
     .eq('id', id)
     .select()
     .single()

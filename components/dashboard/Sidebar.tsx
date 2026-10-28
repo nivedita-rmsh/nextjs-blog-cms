@@ -5,7 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  LayoutDashboard, FileText, PlusCircle, Users, FolderOpen, Tag, LogOut, Menu, X, MessageSquare, Loader2, Code, Bot, UserCircle, Mail,
+  LayoutDashboard, FileText, PlusCircle, Users, FolderOpen, Tag, LogOut, Menu, X, MessageSquare, Loader2, Code, Bot, UserCircle, Mail, ShieldCheck,
 } from 'lucide-react'
 import { allowEditorNavigation } from '@/features/posts/drafts/navigation'
 import { cn } from '@/lib/utils'
@@ -55,6 +55,7 @@ export function Sidebar({ profile }: SidebarProps) {
     { href: '/dashboard/admin/tags', icon: Tag, label: 'Tags', show: can(role, 'tags:write'), section: 'admin' as const },
     { href: '/dashboard/comments', icon: MessageSquare, label: 'Comments', show: can(role, 'comments:delete:all'), section: 'admin' as const },
     { href: '/dashboard/admin/newsletter', icon: Mail, label: 'Newsletter', show: can(role, 'users:read'), section: 'admin' as const },
+    { href: '/dashboard/admin/moderation', icon: ShieldCheck, label: 'Moderation', show: role === 'admin', section: 'admin' as const },
   ]
 
   const initials = profile.full_name

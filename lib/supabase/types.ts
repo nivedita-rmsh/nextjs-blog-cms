@@ -185,6 +185,8 @@ export type Database = {
           excerpt: string | null
           id: string
           published_at: string | null
+          moderation_status: string
+          is_premium: boolean
           seo_description: string | null
           seo_title: string | null
           slug: string
@@ -202,6 +204,8 @@ export type Database = {
           excerpt?: string | null
           id?: string
           published_at?: string | null
+          moderation_status?: string
+          is_premium?: boolean
           seo_description?: string | null
           seo_title?: string | null
           slug: string
@@ -219,6 +223,8 @@ export type Database = {
           excerpt?: string | null
           id?: string
           published_at?: string | null
+          moderation_status?: string
+          is_premium?: boolean
           seo_description?: string | null
           seo_title?: string | null
           slug?: string
@@ -242,6 +248,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      premium_post_contents: {
+        Row: { content: string; post_id: string; updated_at: string }
+        Insert: { content: string; post_id: string; updated_at?: string }
+        Update: { content?: string; post_id?: string; updated_at?: string }
+        Relationships: [{
+          foreignKeyName: "premium_post_contents_post_id_fkey"
+          columns: ["post_id"]
+          isOneToOne: true
+          referencedRelation: "posts"
+          referencedColumns: ["id"]
+        }]
+      }
+      premium_subscriptions: {
+        Row: { created_at: string; expires_at: string | null; status: string; updated_at: string; user_id: string }
+        Insert: { created_at?: string; expires_at?: string | null; status?: string; updated_at?: string; user_id: string }
+        Update: { created_at?: string; expires_at?: string | null; status?: string; updated_at?: string; user_id?: string }
+        Relationships: [{
+          foreignKeyName: "premium_subscriptions_user_id_fkey"
+          columns: ["user_id"]
+          isOneToOne: true
+          referencedRelation: "profiles"
+          referencedColumns: ["id"]
+        }]
       }
       profiles: {
         Row: {

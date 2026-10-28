@@ -54,22 +54,14 @@ describe('POST /api/posts/create', () => {
     expect(res.status).toBe(422)
     expect(createServiceClient).not.toHaveBeenCalled()
   })
-  it('publishes a reviewed engineering article and queues its newsletter', async () => {
+  it('queues reviewed API publication requests for moderator approval', async () => {
     const db = postClient()
     vi.mocked(createServiceClient).mockReturnValue(db.client)
     const res = await POST(request({ ...validApiPost, status: 'published', editorial_reviewed: true }))
     expect(res.status).toBe(201)
-    expect(db.posts[0]).toMatchObject({ status: 'published', title: validPost.title })
-    expect(scheduleNewsletterSend).toHaveBeenCalledWith('created-post', { resetPendingDelay: true })
-  })
-  it('returns creation success and a separate newsletter warning after scheduling failure', async () => {
-    const db = postClient()
-    vi.mocked(createServiceClient).mockReturnValue(db.client)
-    vi.mocked(scheduleNewsletterSend).mockRejectedValueOnce(new Error('Queue unavailable'))
-    const res = await POST(request({ ...validApiPost, status: 'published', editorial_reviewed: true }))
-    expect(res.status).toBe(201)
-    expect(await res.json()).toMatchObject({ success: true, newsletter_warning: expect.stringContaining('Post published') })
-    expect(db.posts[0].status).toBe('published')
+    expect(db.posts[0]).toMatchObject({ status: 'draft', moderation_status: 'pending', title: validPost.title })
+    expect((await res.json()).moderation_warning).toContain('administrator moderation')
+    expect(scheduleNewsletterSend).not.toHaveBeenCalled()
   })
   it('cannot publish under a missing or unnamed author', async () => {
     const db = postClient([], null)

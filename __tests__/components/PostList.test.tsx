@@ -24,6 +24,8 @@ const makePost = (id: string, title: string): PostWithRelations => ({
   excerpt: null,
   cover_image: null, cover_image_alt: '',
   status: 'published',
+  moderation_status: 'approved',
+  is_premium: false,
   published_at: null,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',

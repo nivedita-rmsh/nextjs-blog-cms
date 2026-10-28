@@ -35,6 +35,7 @@ import { PostNewsletter } from './PostNewsletter'
 const postSchema = z.object({
   title: z.string(),
   editorial_reviewed: z.boolean(),
+  is_premium: z.boolean(),
   slug: z.string(),
   excerpt: z.string(),
   content: z.string(),
@@ -118,6 +119,7 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
       shouldFocusError: false,
       defaultValues: {
         editorial_reviewed: false,
+        is_premium: post?.is_premium ?? false,
         title: post?.title ?? '',
         slug: post?.slug ?? '',
         excerpt: post?.excerpt ?? '',
@@ -225,12 +227,13 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
         if (createdPost || !post) {
           setCreatedPost({ ...result.data, author: post?.author ?? null, category: categories.find(category => category.id === values.category_id) ?? null, tags: tags.filter(tag => values.tag_ids.includes(tag.id)) })
         } else router.refresh()
-        const savedMessage = isPublished ? 'Published changes saved' : 'Post saved as draft'
-        const message = publish ? 'Post saved and published!' : savedMessage
+        const savedMessage = result.data.moderation_status === 'pending' ? 'Submitted for moderation' : isPublished ? 'Published changes saved' : 'Post saved as draft'
+        const message = publish && result.data.moderation_status === 'pending' ? 'Submitted for administrator moderation' : publish ? 'Post saved and published!' : savedMessage
         toast.success(message)
         if (result.newsletterState) setSavedNewsletter(result.newsletterState)
         setNewsletterWarning(result.newsletterWarning ?? null)
         if (result.newsletterWarning) toast.warning(result.newsletterWarning)
+        if (result.moderationWarning) toast.warning(result.moderationWarning)
         setReviewOpen(false)
       }
     } catch {
@@ -268,11 +271,12 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
         }
         if (createdPost) setCreatedPost({ ...createdPost, ...result.data })
         setReviewOpen(false)
-        const message = isPublished ? 'Post unpublished' : 'Post saved and published!'
+        const message = isPublished ? 'Post unpublished' : result.data.moderation_status === 'pending' ? 'Submitted for administrator moderation' : result.data.status === 'published' ? 'Post saved and published!' : 'Post saved as draft'
         toast.success(message)
         if (result.newsletterState) setSavedNewsletter(result.newsletterState)
         setNewsletterWarning(result.newsletterWarning ?? null)
         if (result.newsletterWarning) toast.warning(result.newsletterWarning)
+        if (result.moderationWarning) toast.warning(result.moderationWarning)
         router.refresh()
       }
     } catch {
@@ -473,6 +477,13 @@ export function PostEditor({ post: initialPost, categories, tags, tagsError, can
               </label>
             )}
             <FieldError name="slug" errors={fieldErrors} />
+
+            <div className="rounded-lg border border-border/70 p-3 space-y-2">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input type="checkbox" {...register('is_premium')} /> Premium article
+              </label>
+              <p className="text-xs text-muted-foreground">The full article body is stored separately. Readers need an active premium entitlement; the excerpt remains visible as a preview.</p>
+            </div>
 
             {/* Excerpt */}
             <div className="space-y-1.5">

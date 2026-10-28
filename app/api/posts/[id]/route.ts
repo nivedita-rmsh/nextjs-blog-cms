@@ -15,7 +15,7 @@ import {
 
 const POST_FULL_SELECT = `
   id, title, slug, content, excerpt, seo_title, seo_description,
-  status, cover_image, cover_image_alt, author_id, created_at, updated_at, published_at,
+  status, cover_image, cover_image_alt, author_id, created_at, updated_at, published_at, is_premium,
   category:categories(name),
   tags:post_tags(tag:tags(name))
 `
@@ -29,6 +29,7 @@ type RawPostFull = {
   seo_title: string | null
   seo_description: string | null
   status: string
+  is_premium: boolean
   cover_image_alt: string
   cover_image: string | null
   author_id: string | null
@@ -49,6 +50,7 @@ function normalizeFullPost(raw: RawPostFull) {
     meta_title: raw.seo_title,
     meta_description: raw.seo_description,
     status: raw.status,
+    is_premium: raw.is_premium,
     category: raw.category?.name ?? null,
     tags: (raw.tags ?? []).map((pt) => pt.tag?.name).filter(Boolean) as string[],
     image_url: raw.cover_image,
@@ -88,8 +90,12 @@ export async function GET(
     .single()
 
   if (error || !data) return apiError('Post not found.', 404)
-
-  return apiSuccess({ data: normalizeFullPost(data as unknown as RawPostFull) })
+  let post = data as unknown as RawPostFull
+  if (post.is_premium) {
+    const { data: premiumBody } = await supabase.from('premium_post_contents').select('content').eq('post_id', post.id).maybeSingle()
+    post = { ...post, content: premiumBody?.content ?? null }
+  }
+  return apiSuccess({ data: normalizeFullPost(post) })
 }
 
 export async function PATCH(
@@ -114,6 +120,10 @@ export async function PATCH(
     .single()
 
   if (fetchError || !existing) return apiError('Post not found.', 404)
+  if (existing.is_premium) {
+    const { data: premiumBody } = await supabase.from('premium_post_contents').select('content').eq('post_id', id).maybeSingle()
+    existing.content = premiumBody?.content ?? null
+  }
 
   let rawBody: unknown
   try {
@@ -125,6 +135,12 @@ export async function PATCH(
   const parsed = postApiSchema.safeParse(rawBody)
   if (!parsed.success) return apiError('Invalid post fields', 422, { field_errors: parsed.error.flatten().fieldErrors })
   const body = parsed.data
+  if (body.status === 'published' && existing.moderation_status !== 'approved') {
+    return apiError('This post must be approved by an administrator before it can be published.', 422)
+  }
+  const hasEditorialChanges = body.title !== undefined || body.content !== undefined || body.slug !== undefined ||
+    body.excerpt !== undefined || body.meta_title !== undefined || body.meta_description !== undefined ||
+    body.image_url !== undefined || body.image_alt !== undefined || body.category !== undefined || body.tags !== undefined
   if (body.slug !== undefined) {
     const plan = planSlug(body.slug, body.title ?? existing.title, false, existing.slug)
     if (plan.error) return apiError(plan.error, 422, { field_errors: { slug: [plan.error] } })
@@ -184,6 +200,14 @@ export async function PATCH(
       : null
   }
 
+  if (existing.status === 'published' && hasEditorialChanges) {
+    updatePayload.status = 'draft'
+    updatePayload.moderation_status = 'pending'
+    updatePayload.published_at = null
+  } else if (existing.status === 'published' && body.status === 'draft') {
+    updatePayload.moderation_status = 'not_submitted'
+  }
+
   const { data: saved, error: updateError } = await savePostAtomic({ actorId: auth.userId,
     postId: id, payload: updatePayload, expectedUpdatedAt: existing.updated_at,
     expectedStatus: existing.status, tagNames: body.tags,
@@ -197,21 +221,29 @@ export async function PATCH(
   }
 
   let newsletterWarning: string | undefined
-  if (candidate.status === 'draft' && existing.status === 'published') {
+  if (updated.status === 'draft' && existing.status === 'published') {
     try { await cancelNewsletterSend(id) } catch (err) {
       console.error('[API] Newsletter cancellation failed:', err)
       newsletterWarning = 'Post unpublished, but newsletter cancellation could not be confirmed. Delivery checks block new batches while unpublished.'
     }
-  } else if (candidate.status === 'published' && existing.status !== 'published') {
+  } else if (updated.status === 'published' && existing.status !== 'published') {
     try { await scheduleNewsletterSend(id, { resetPendingDelay: true }) } catch (err) {
       console.error('[API] Newsletter scheduling failed:', err)
       newsletterWarning = 'Post published, but newsletter scheduling could not be confirmed. Check newsletter status in the dashboard before retrying.'
     }
   }
-  if (existing.status === 'published' || candidate.status === 'published') refreshPostPaths(existing.slug, updated.slug)
+  if (existing.status === 'published' || updated.status === 'published') refreshPostPaths(existing.slug, updated.slug)
   else refreshDraftPaths()
   const { data: fullPost } = await supabase.from('posts').select(POST_FULL_SELECT).eq('id', id).single()
-  return apiSuccess({ data: normalizeFullPost((fullPost ?? updated) as unknown as RawPostFull), ...(newsletterWarning ? { newsletter_warning: newsletterWarning } : {}) })
+  let responsePost = (fullPost ?? updated) as unknown as RawPostFull
+  if (responsePost.is_premium) {
+    const { data: premiumBody } = await supabase.from('premium_post_contents').select('content').eq('post_id', id).maybeSingle()
+    responsePost = { ...responsePost, content: premiumBody?.content ?? null }
+  }
+  const moderationWarning = updated.moderation_status === 'pending'
+    ? 'The updated article is a draft awaiting administrator moderation before it can be public again.'
+    : undefined
+  return apiSuccess({ data: normalizeFullPost(responsePost), ...(newsletterWarning ? { newsletter_warning: newsletterWarning } : {}), ...(moderationWarning ? { moderation_warning: moderationWarning } : {}) })
 }
 
 export async function DELETE(

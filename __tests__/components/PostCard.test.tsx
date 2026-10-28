@@ -24,6 +24,8 @@ const basePost: PostWithRelations = {
   excerpt: 'A short excerpt',
   cover_image: null, cover_image_alt: '',
   status: 'published',
+  moderation_status: 'approved',
+  is_premium: false,
   published_at: '2024-06-01T00:00:00Z',
   created_at: '2024-06-01T00:00:00Z',
   updated_at: '2024-06-01T00:00:00Z',

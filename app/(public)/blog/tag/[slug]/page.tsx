@@ -72,7 +72,7 @@ export default async function TagPage({ params }: TagPageProps) {
   const posts = ((postTagsData ?? []) as AnyRow[])
     .map((pt) => pt.post as PostWithRelations)
     .filter(Boolean)
-    .filter((p) => p.status === 'published')
+    .filter((p) => p.status === 'published' && p.moderation_status === 'approved')
     .map((p) => ({
       ...p,
       tags: ((p.tags ?? []) as AnyRow[]).map((pt) => pt.tag).filter(Boolean),

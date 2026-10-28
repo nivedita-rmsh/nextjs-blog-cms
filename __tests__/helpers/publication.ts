@@ -9,7 +9,8 @@ export const validPost = {
   id: 'post-1', title: 'Integration Testing at Service Boundaries', slug: 'integration-testing-service-boundaries',
   content: articleContent, excerpt: 'Design integration tests that verify service contracts, idempotent retries, and recovery from partial failures.',
   seo_title: 'Integration Testing at Service Boundaries', seo_description: 'Practical contract tests for reliable engineering systems.',
-  status: 'draft', author_id: 'user-1', cover_image: null, cover_image_alt: '', category_id: null,
+  status: 'draft', moderation_status: 'not_submitted', is_premium: false,
+  author_id: 'user-1', cover_image: null, cover_image_alt: '', category_id: null,
   created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', published_at: null as string | null,
   category: { name: 'Engineering' }, tags: [{ tag: { name: 'testing' } }],
 }
